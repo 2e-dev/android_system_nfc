@@ -357,6 +357,22 @@ typedef struct {
   uint8_t hci_version;     /* HCI Version */
 } tNFA_ID_MGMT_GATE_INFO;
 
+#ifndef NFA_HCI_MAX_FRAG_INFO
+#define NFA_HCI_MAX_FRAG_INFO 5
+#endif
+
+typedef struct {
+  uint8_t pipe;
+  uint16_t msg_len;     /* For segmentation - length of the combined message */
+  uint16_t max_msg_len; /* Maximum reassembled message size */
+  uint8_t msg_data[NFA_MAX_HCI_EVENT_LEN]; /* For segmentation - the combined
+   message data */
+  uint8_t* p_msg_data;  /* For segmentation - reassembled message */
+  uint8_t type;         /* Instruction type of incoming message */
+  uint8_t inst;         /* Instruction of incoming message */
+  bool assembly_failed; /* Set true if Insufficient buffer to Reassemble */
+} tNFA_HCI_FRAG_INFO;
+
 /* NFA HCI control block */
 typedef struct {
   tNFA_HCI_STATE hci_state; /* state of the HCI */
@@ -370,19 +386,19 @@ typedef struct {
   /* active host in the host network */
   uint8_t active_host[NFA_HCI_MAX_HOST_IN_NETWORK];
   uint8_t reset_host[NFA_HCI_MAX_HOST_IN_NETWORK]; /* List of host reseting */
-  bool b_low_power_mode;  /* Host controller in low power mode */
+  bool b_low_power_mode;    /* Host controller in low power mode */
   bool b_hci_new_sessionId; /* Command sent to set a new session Id */
-  bool b_hci_netwk_reset; /* Command sent to reset HCI Network */
-  bool w4_hci_netwk_init; /* Wait for other host in network to initialize */
-  TIMER_LIST_ENT timer;   /* Timer to avoid indefinitely waiting for response */
-  uint8_t conn_id;        /* Connection ID */
-  uint8_t buff_size;      /* Connection buffer size */
-  bool nv_read_cmplt;     /* NV Read completed */
-  bool nv_write_needed;   /* Something changed - NV write is needed */
-  bool assembling;        /* Set true if in process of assembling a message  */
-  bool assembly_failed;   /* Set true if Insufficient buffer to Reassemble
-                             incoming message */
-  bool w4_rsp_evt;        /* Application command sent on HCP Event */
+  bool b_hci_netwk_reset;   /* Command sent to reset HCI Network */
+  bool w4_hci_netwk_init;   /* Wait for other host in network to initialize */
+  TIMER_LIST_ENT timer; /* Timer to avoid indefinitely waiting for response */
+  uint8_t conn_id;      /* Connection ID */
+  uint8_t buff_size;    /* Connection buffer size */
+  bool nv_read_cmplt;   /* NV Read completed */
+  bool nv_write_needed; /* Something changed - NV write is needed */
+  bool assembling;      /* Set true if in process of assembling a message  */
+  bool assembly_failed; /* Set true if Insufficient buffer to Reassemble
+                           incoming message */
+  bool w4_rsp_evt;      /* Application command sent on HCP Event */
   tNFA_HANDLE
       app_in_use; /* Index of the application that is waiting for response */
   uint8_t local_gate_in_use;  /* Local gate currently working with */
@@ -420,8 +436,10 @@ typedef struct {
     tNFA_ADMIN_GATE_INFO admin_gate;
     tNFA_LINK_MGMT_GATE_INFO link_mgmt_gate;
     tNFA_ID_MGMT_GATE_INFO id_mgmt_gate;
+    uint8_t active_uicc_id;
   } cfg;
-
+  int frag_cnt;
+  tNFA_HCI_FRAG_INFO frag_info[NFA_HCI_MAX_FRAG_INFO];
 } tNFA_HCI_CB;
 
 /*****************************************************************************
@@ -436,7 +454,7 @@ extern tNFA_HCI_CB nfa_hci_cb;
 *****************************************************************************/
 
 /* Functions in nfa_hci_main.c
-*/
+ */
 extern void nfa_hci_init(void);
 extern void nfa_hci_proc_nfcc_power_mode(uint8_t nfcc_power_mode);
 extern void nfa_hci_dh_startup_complete(void);
@@ -446,12 +464,12 @@ extern void nfa_hci_restore_default_config(uint8_t* p_session_id);
 extern void nfa_hci_enable_one_nfcee(void);
 
 /* Action functions in nfa_hci_act.c
-*/
+ */
 extern void nfa_hci_check_pending_api_requests(void);
 extern void nfa_hci_check_api_requests(void);
 extern void nfa_hci_handle_admin_gate_cmd(uint8_t* p_data);
 extern void nfa_hci_handle_admin_gate_rsp(uint8_t* p_data, uint8_t data_len);
-extern void nfa_hci_handle_admin_gate_evt();
+extern void nfa_hci_handle_admin_gate_evt(uint8_t* p_data, uint8_t length);
 extern void nfa_hci_handle_link_mgm_gate_cmd(uint8_t* p_data);
 extern void nfa_hci_handle_dyn_pipe_pkt(uint8_t pipe, uint8_t* p_data,
                                         uint16_t data_len);
@@ -460,7 +478,7 @@ extern void nfa_hci_api_dealloc_gate(tNFA_HCI_EVENT_DATA* p_evt_data);
 extern void nfa_hci_api_deregister(tNFA_HCI_EVENT_DATA* p_evt_data);
 
 /* Utility functions in nfa_hci_utils.c
-*/
+ */
 extern tNFA_HCI_DYN_GATE* nfa_hciu_alloc_gate(uint8_t gate_id,
                                               tNFA_HANDLE app_handle);
 extern tNFA_HCI_DYN_GATE* nfa_hciu_find_gate_by_gid(uint8_t gate_id);

@@ -34,6 +34,7 @@
 #include "nfc_int.h"
 
 using android::base::StringPrintf;
+extern bool nfc_debug_enabled;
 
 /****************************************************************************
 ** Declarations
@@ -77,6 +78,23 @@ tNFC_STATUS NFC_RegVSCback(bool is_register, tNFC_VS_CBACK* p_cback) {
   return status;
 }
 
+void NFC_RegRestartCback(void* p_cback) {
+  LOG(INFO) << StringPrintf("%s - Restart CB registered", __func__);
+  nfc_cb.p_restart_cback = p_cback;
+}
+
+void NFC_RestartOrAbort() {
+  if (nfc_cb.p_restart_cback) {
+    LOG(ERROR) << StringPrintf("%s - Restart CB registered, calling", __func__);
+    (*(tNFC_RESTART_CBACK*)
+          nfc_cb.p_restart_cback)();  // callback to ask restart
+  } else {
+    LOG(ERROR) << StringPrintf("%s - No restart CB registered, abort",
+                               __func__);
+    abort();
+  }
+}
+
 /*******************************************************************************
 **
 ** Function         NFC_SendRawVsCommand
@@ -93,7 +111,7 @@ tNFC_STATUS NFC_RegVSCback(bool is_register, tNFC_VS_CBACK* p_cback) {
 tNFC_STATUS NFC_SendRawVsCommand(NFC_HDR* p_data, tNFC_VS_CBACK* p_cback) {
   /* Validate parameters */
   if (p_data == nullptr || (p_data->len > NCI_MAX_VSC_SIZE)) {
-    LOG(ERROR) << StringPrintf("buffer offset must be >= %d",
+    LOG(ERROR) << StringPrintf("%s - buffer offset must be >= %d", __func__,
                                NCI_VSC_MSG_HDR_SIZE);
     if (p_data) GKI_freebuf(p_data);
     return NFC_STATUS_INVALID_PARAM;
@@ -139,7 +157,7 @@ tNFC_STATUS NFC_SendVsCommand(uint8_t oid, NFC_HDR* p_data,
   /* Validate parameters */
   if ((p_data == nullptr) || (p_data->offset < NCI_VSC_MSG_HDR_SIZE) ||
       (p_data->len > NCI_MAX_VSC_SIZE)) {
-    LOG(ERROR) << StringPrintf("buffer offset must be >= %d",
+    LOG(ERROR) << StringPrintf("%s - buffer offset must be >= %d", __func__,
                                NCI_VSC_MSG_HDR_SIZE);
     if (p_data) GKI_freebuf(p_data);
     return NFC_STATUS_INVALID_PARAM;
@@ -156,6 +174,16 @@ tNFC_STATUS NFC_SendVsCommand(uint8_t oid, NFC_HDR* p_data,
   NCI_MSG_BLD_HDR1(pp, oid);
   *pp = (uint8_t)p_data->len;
   p_data->len += NCI_MSG_HDR_SIZE;
+
+  // Check if the cmd sent is a request for pipe information
+  if ((*(pp + 1) == 0x03) && (*(pp + 2) != 0x00)) {
+    DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+        "NFC_SendVsCommand() - Sending cmd to retrieve pipe information");
+    nfc_cb.flag_vs_pipe_info = 1;
+  } else {
+    nfc_cb.flag_vs_pipe_info = 0;
+  }
+
   nfc_ncif_check_cmd_queue(p_data);
   return status;
 }

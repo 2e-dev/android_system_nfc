@@ -27,7 +27,6 @@
 
 #include <android-base/stringprintf.h>
 #include <base/logging.h>
-#include <log/log.h>
 
 #include "nfc_target.h"
 
@@ -65,12 +64,6 @@ tNFC_STATUS CE_SendRawFrame(uint8_t* p_raw_data, uint16_t data_len) {
   uint8_t* p;
 
   if (ce_cb.p_cback) {
-    if (data_len > GKI_get_pool_bufsize(NFC_RW_POOL_ID) - NCI_MSG_OFFSET_SIZE -
-                       NCI_DATA_HDR_SIZE - 1) {
-      android_errorWriteLog(0x534e4554, "157649398");
-      return NFC_STATUS_FAILED;
-    }
-
     /* a valid opcode for RW */
     p_data = (NFC_HDR*)GKI_getpoolbuf(NFC_RW_POOL_ID);
     if (p_data) {
@@ -79,7 +72,7 @@ tNFC_STATUS CE_SendRawFrame(uint8_t* p_raw_data, uint16_t data_len) {
       memcpy(p, p_raw_data, data_len);
       p_data->len = data_len;
       DLOG_IF(INFO, nfc_debug_enabled)
-          << StringPrintf("CE SENT raw frame (0x%x)", data_len);
+          << StringPrintf("%s - CE SENT raw frame (0x%x)", __func__, data_len);
       status = NFC_SendData(NFC_RF_CONN_ID, p_data);
     }
   }

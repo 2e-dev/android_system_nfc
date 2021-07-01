@@ -264,7 +264,7 @@ void rw_t1t_update_tag_state(void) {
       }
     } else {
       /* If NDEF is not yet detected then Tag remains in Initialized state
-      *  after NDEF Detection the Tag state may be updated */
+       *  after NDEF Detection the Tag state may be updated */
       p_t1t->tag_attribute = RW_T1_TAG_ATTRB_INITIALIZED;
     }
   } else {
@@ -1045,18 +1045,18 @@ static tNFC_STATUS rw_t1t_handle_tlv_detect_rsp(uint8_t* p_data) {
                       p_t1t->num_lockbytes++;
                     } else
                       LOG(ERROR) << StringPrintf(
-                          "T1T Buffer overflow error. Max supported lock "
+                          "%s - T1T Buffer overflow error. Max supported lock "
                           "bytes=0x%02X",
-                          RW_T1T_MAX_LOCK_BYTES);
+                          __func__, RW_T1T_MAX_LOCK_BYTES);
                     xx++;
                   }
                   p_t1t->num_lock_tlvs++;
                   rw_t1t_update_attributes();
                 } else
                   LOG(ERROR) << StringPrintf(
-                      "T1T Buffer overflow error. Max supported lock "
+                      "%s - T1T Buffer overflow error. Max supported lock "
                       "tlvs=0x%02X",
-                      RW_T1T_MAX_LOCK_TLVS);
+                      __func__, RW_T1T_MAX_LOCK_TLVS);
 
                 tlv_detect_state = RW_T1T_SUBSTATE_WAIT_TLV_DETECT;
               }
@@ -1193,8 +1193,8 @@ static tNFC_STATUS rw_t1t_handle_ndef_rall_rsp(void) {
       }
     } else {
       LOG(ERROR) << StringPrintf(
-          "RW_T1tReadNDef - Invalid NDEF len: %u or NDEF corrupted",
-          p_t1t->ndef_msg_len);
+          "%s - RW_T1tReadNDef - Invalid NDEF len: %u or NDEF corrupted",
+          __func__, p_t1t->ndef_msg_len);
       status = NFC_STATUS_FAILED;
     }
   } else {
@@ -1268,8 +1268,8 @@ static tNFC_STATUS rw_t1t_handle_ndef_read_rsp(uint8_t* p_data) {
     if ((p_t1t->hr[0] & 0x0F) != 1) {
       if ((p_t1t->ndef_msg_len - p_t1t->work_offset) <= T1T_BLOCK_SIZE) {
         p_t1t->block_read++;
-        ndef_status = rw_t1t_send_dyn_cmd(T1T_CMD_READ8,
-                                          (uint8_t)(p_t1t->block_read), nullptr);
+        ndef_status = rw_t1t_send_dyn_cmd(
+            T1T_CMD_READ8, (uint8_t)(p_t1t->block_read), nullptr);
         if (ndef_status == NFC_STATUS_OK) {
           ndef_status = NFC_STATUS_CONTINUE;
         }
@@ -1606,7 +1606,8 @@ static uint8_t rw_t1t_get_ndef_flags(void) {
   if ((p_t1t->hr[0] & 0xF0) == T1T_NDEF_SUPPORTED)
     flags |= RW_NDEF_FL_SUPPORTED;
 
-  if (t1t_tag_init_data(p_t1t->hr[0]) != nullptr) flags |= RW_NDEF_FL_FORMATABLE;
+  if (t1t_tag_init_data(p_t1t->hr[0]) != nullptr)
+    flags |= RW_NDEF_FL_FORMATABLE;
 
   if ((p_t1t->mem[T1T_CC_RWA_BYTE] & 0x0F) == T1T_CC_RWA_RO)
     flags |= RW_NDEF_FL_READ_ONLY;

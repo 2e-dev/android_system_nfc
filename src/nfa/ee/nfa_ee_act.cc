@@ -30,6 +30,7 @@
 #include "nfa_dm_int.h"
 #include "nfa_ee_int.h"
 #include "nfa_hci_int.h"
+#include "nfc_config.h"
 
 #include <statslog.h>
 #include "metrics.h"
@@ -105,7 +106,8 @@ const uint8_t nfa_ee_proto_list[NFA_EE_NUM_PROTO] = {
     NFC_PROTOCOL_T1T, NFC_PROTOCOL_T2T, NFC_PROTOCOL_T3T, NFC_PROTOCOL_ISO_DEP,
     NFC_PROTOCOL_NFC_DEP};
 
-static void nfa_ee_report_discover_req_evt(void);
+uint8_t NFA_REMOVE_ALL_AID[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+
 static void nfa_ee_build_discover_req_evt(tNFA_EE_DISCOVER_REQ* p_evt_data);
 void nfa_ee_check_set_routing(uint16_t new_size, int* p_max_len, uint8_t* p,
                               int* p_cur_offset);
@@ -127,16 +129,17 @@ static void nfa_ee_trace_aid(std::string p_str, uint8_t id, uint8_t aid_len,
 
   buff[0] = 0;
   if (aid_len > NFA_MAX_AID_LEN) {
-    LOG(ERROR) << StringPrintf("aid_len: %d exceeds max(%d)", aid_len,
-                               NFA_MAX_AID_LEN);
+    LOG(ERROR) << StringPrintf("%s - aid_len: %d exceeds max(%d)", __func__,
+                               aid_len, NFA_MAX_AID_LEN);
     len = NFA_MAX_AID_LEN;
   }
   for (xx = 0; xx < len; xx++) {
     yy += snprintf(&buff[yy], MAX_BUFF_SIZE - yy, "%02x ", *p);
     p++;
   }
-  DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-      "%s id:0x%x len=%d aid:%s", p_str.c_str(), id, aid_len, buff);
+  DLOG_IF(INFO, nfc_debug_enabled)
+      << StringPrintf("%s - %s id:0x%x len=%d aid:%s", __func__, p_str.c_str(),
+                      id, aid_len, buff);
 }
 
 /*******************************************************************************
@@ -307,6 +310,25 @@ static uint16_t nfa_ee_total_lmrt_size(void) {
   return lmrt_size;
 }
 
+// Force the blocking bits for entries
+void NFA_SetBlockingBit(bool block) {
+  DLOG_IF(INFO, nfc_debug_enabled)
+      << StringPrintf("%s - block entries :%d", __func__, block);
+  nfa_ee_cb.route_block_control = 0x00;
+  if (block) {
+    nfa_ee_cb.route_block_control = NCI_ROUTE_QUAL_BLOCK_ROUTE;
+  } else {
+    if (NfcConfig::hasKey(NAME_NFA_AID_BLOCK_ROUTE)) {
+      unsigned retlen = NfcConfig::getUnsigned(NAME_NFA_AID_BLOCK_ROUTE);
+      if ((retlen == 0x01) && (NFC_GetNCIVersion() == NCI_VERSION_2_0)) {
+        nfa_ee_cb.route_block_control = NCI_ROUTE_QUAL_BLOCK_ROUTE;
+        DLOG_IF(INFO, nfc_debug_enabled)
+            << StringPrintf("%s - nfa_ee_cb.route_block_control=0x%x", __func__,
+                            nfa_ee_cb.route_block_control);
+      }
+    }
+  }
+}
 static void nfa_ee_add_tech_route_to_ecb(tNFA_EE_ECB* p_cb, uint8_t* pp,
                                          uint8_t* p, uint8_t* ps,
                                          int* p_cur_offset) {
@@ -331,8 +353,35 @@ static void nfa_ee_add_tech_route_to_ecb(tNFA_EE_ECB* p_cb, uint8_t* pp,
         power_cfg |= NCI_ROUTE_PWR_STATE_SCREEN_OFF_LOCK();
     }
     if (power_cfg) {
-      add_route_tech_proto_tlv(&pp, NFC_ROUTE_TAG_TECH, p_cb->nfcee_id,
-                               power_cfg, nfa_ee_tech_list[xx]);
+      bool block = 0;
+      uint8_t mask = 0;
+
+      nfa_dm_get_tech_route_block(&mask, &block);
+
+      DLOG_IF(INFO, nfc_debug_enabled)
+          << StringPrintf("%s - processing nfa_ee_tech_list[xx]:%d", __func__,
+                          nfa_ee_tech_list[xx]);
+
+      // If block a tech, allow no power states
+      if (block && ((((mask & NFA_TECHNOLOGY_MASK_A) == 0) &&
+                     (nfa_ee_tech_list[xx] == NFC_RF_TECHNOLOGY_A)) ||
+                    (((mask & NFA_TECHNOLOGY_MASK_B) == 0) &&
+                     (nfa_ee_tech_list[xx] == NFC_RF_TECHNOLOGY_B)) ||
+                    (((mask & NFA_TECHNOLOGY_MASK_F) == 0) &&
+                     (nfa_ee_tech_list[xx] == NFC_RF_TECHNOLOGY_F)))) {
+        DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+            "%s - Blocking tech routing for nfa_ee_tech_list[xx]:%d", __func__,
+            nfa_ee_tech_list[xx]);
+
+        add_route_tech_proto_tlv(
+            &pp, nfa_ee_cb.route_block_control | NFC_ROUTE_TAG_TECH,
+            0x00 /* DH */, 0x00 /* no power states */, nfa_ee_tech_list[xx]);
+      } else {
+        add_route_tech_proto_tlv(
+            &pp, nfa_ee_cb.route_block_control | NFC_ROUTE_TAG_TECH,
+            p_cb->nfcee_id, power_cfg, nfa_ee_tech_list[xx]);
+      }
+
       num_tlv++;
       if (power_cfg != NCI_ROUTE_PWR_STATE_ON)
         nfa_ee_cb.ee_cfged |= NFA_EE_CFGED_OFF_ROUTING;
@@ -349,6 +398,7 @@ static void nfa_ee_add_proto_route_to_ecb(tNFA_EE_ECB* p_cb, uint8_t* pp,
                                           uint8_t* p, uint8_t* ps,
                                           int* p_cur_offset) {
   uint8_t num_tlv = *ps;
+  bool isoDepRoutingDh = false;
 
   /* add the Protocol based routing */
   for (int xx = 0; xx < NFA_EE_NUM_PROTO; xx++) {
@@ -365,6 +415,9 @@ static void nfa_ee_add_proto_route_to_ecb(tNFA_EE_ECB* p_cb, uint8_t* pp,
       /* Applying Route Block for ISO DEP Protocol, so that AIDs
        * which are not in the routing table can also be blocked */
       if (nfa_ee_proto_mask_list[xx] == NFA_PROTOCOL_MASK_ISO_DEP) {
+        if (p_cb->nfcee_id == NFC_DH_ID) {
+          isoDepRoutingDh = true;
+        }
         proto_tag = NFC_ROUTE_TAG_PROTO | nfa_ee_cb.route_block_control;
 
         /* Enable screen on lock power state for ISO-DEP protocol to
@@ -384,10 +437,17 @@ static void nfa_ee_add_proto_route_to_ecb(tNFA_EE_ECB* p_cb, uint8_t* pp,
       if (p_cb->nfcee_id == NFC_DH_ID &&
           nfa_ee_proto_mask_list[xx] == NFA_PROTOCOL_MASK_NFC_DEP) {
         /* add NFC-DEP routing to HOST */
-        add_route_tech_proto_tlv(&pp, NFC_ROUTE_TAG_PROTO, NFC_DH_ID,
-                                 NCI_ROUTE_PWR_STATE_ON, NFC_PROTOCOL_NFC_DEP);
+        add_route_tech_proto_tlv(
+            &pp, NFC_ROUTE_TAG_PROTO | nfa_ee_cb.route_block_control, NFC_DH_ID,
+            NCI_ROUTE_PWR_STATE_ON, NFC_PROTOCOL_NFC_DEP);
         DLOG_IF(INFO, nfc_debug_enabled)
             << StringPrintf("%s - NFC DEP added for DH!!!", __func__);
+        if (isoDepRoutingDh == false) {
+          add_route_tech_proto_tlv(
+              &pp, NFC_ROUTE_TAG_PROTO | nfa_ee_cb.route_block_control,
+              NFC_DH_ID, 0x00, NFC_PROTOCOL_ISO_DEP);
+          num_tlv++;
+        }
       } else {
         add_route_tech_proto_tlv(&pp, proto_tag, p_cb->nfcee_id, power_cfg,
                                  nfa_ee_proto_list[xx]);
@@ -408,7 +468,8 @@ static void nfa_ee_add_aid_route_to_ecb(tNFA_EE_ECB* p_cb, uint8_t* pp,
                                         uint8_t* p, uint8_t* ps,
                                         int* p_cur_offset, int* p_max_len) {
   uint8_t num_tlv = *ps;
-
+  uint8_t new_size;
+  uint8_t* p_start;
   /* add the AID routing */
   if (p_cb->aid_entries) {
     int start_offset = 0;
@@ -418,22 +479,25 @@ static void nfa_ee_add_aid_route_to_ecb(tNFA_EE_ECB* p_cb, uint8_t* pp,
       uint8_t route_qual = 0;
       uint8_t* p_start = pp;
       /* add one AID entry */
+
       if (p_cb->aid_rt_info[xx] & NFA_EE_AE_ROUTE) {
         num_tlv++;
         uint8_t* pa = &p_cb->aid_cfg[start_offset];
 
         DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-            "%s -  p_cb->aid_info%x", __func__, p_cb->aid_info[xx]);
+            "%s -  p_cb->aid_info: %x", __func__, p_cb->aid_info[xx]);
         if (p_cb->aid_info[xx] & NCI_ROUTE_QUAL_LONG_SELECT) {
-          DLOG_IF(INFO, nfc_debug_enabled)
-              << StringPrintf("%s - %x", __func__,
-                              p_cb->aid_info[xx] & NCI_ROUTE_QUAL_LONG_SELECT);
+          //          DLOG_IF(INFO, nfc_debug_enabled)
+          //              << StringPrintf("%s - %x", __func__,
+          //                              p_cb->aid_info[xx] &
+          //                              NCI_ROUTE_QUAL_LONG_SELECT);
           route_qual |= NCI_ROUTE_QUAL_LONG_SELECT;
         }
         if (p_cb->aid_info[xx] & NCI_ROUTE_QUAL_SHORT_SELECT) {
-          DLOG_IF(INFO, nfc_debug_enabled)
-              << StringPrintf("%s - %x", __func__,
-                              p_cb->aid_info[xx] & NCI_ROUTE_QUAL_SHORT_SELECT);
+          //          DLOG_IF(INFO, nfc_debug_enabled)
+          //              << StringPrintf("%s - %x", __func__,
+          //                              p_cb->aid_info[xx] &
+          //                              NCI_ROUTE_QUAL_SHORT_SELECT);
           route_qual |= NCI_ROUTE_QUAL_SHORT_SELECT;
         }
 
@@ -463,6 +527,62 @@ static void nfa_ee_add_aid_route_to_ecb(tNFA_EE_ECB* p_cb, uint8_t* pp,
   } else {
     DLOG_IF(INFO, nfc_debug_enabled)
         << StringPrintf("%s - No AID entries available", __func__);
+  }
+  /************************************/
+  /* Add routing to default AID route */
+  /************************************/
+  // Check if default AID should be added or removed
+  // If NFCEE for default AID route is not connected or HCE is disabled, then
+  // default_aid_route value will be
+  // NFA_EE_INVALID
+  if ((p_cb->nfcee_id == 0x00) &&
+      (nfa_ee_cb.default_aid_route != NFA_EE_INVALID)) {
+    DLOG_IF(INFO, nfc_debug_enabled)
+        << StringPrintf("%s - default_aid_route is 0x%02X", __func__,
+                        nfa_ee_cb.default_aid_route);
+
+    // Check if target NFCEE is connected. if not, route to DH
+    if (nfa_ee_cb.default_aid_route != 0x00) {
+      for (int i = 0; i < nfa_ee_cb.cur_ee - 1; i++) {
+        if (nfa_ee_cb.ecb[i].nfcee_id == nfa_ee_cb.default_aid_route) {
+          if (nfa_ee_cb.ecb[i].ee_status != NFC_NFCEE_STATUS_ACTIVE) {
+            DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+                "%s - NFCEE for default AID route is not active, use DH",
+                __func__);
+            nfa_ee_cb.default_aid_route = 0x00;
+            nfa_ee_cb.default_aid_power_state = 0x11;
+          }
+        }
+      }
+    }
+
+    p_start = pp;
+    *pp++ = NFC_ROUTE_TAG_AID | nfa_ee_cb.route_block_control | 0x10;
+    *pp++ = 2;
+    *pp++ = nfa_ee_cb.default_aid_route;
+    *pp++ = nfa_ee_cb.default_aid_power_state;
+
+    new_size = (uint8_t)(pp - p_start);
+    num_tlv++;
+
+    nfa_ee_check_set_routing(new_size, p_max_len, ps, p_cur_offset);
+
+    if (*ps == 0) {
+      /* just sent routing command, update local */
+      *ps = 1;
+      num_tlv = *ps;
+      *p_cur_offset = new_size;
+      pp = ps + 1;
+      p = pp;
+      memcpy(p, p_start, new_size);
+      pp += new_size;
+    } else {
+      /* add the new entry */
+      *ps = num_tlv;
+      *p_cur_offset += new_size;
+    }
+
+    nfa_ee_cb.default_aid_route = NFA_EE_INVALID;
   }
 }
 
@@ -512,7 +632,7 @@ static void nfa_ee_add_sys_code_route_to_ecb(tNFA_EE_ECB* p_cb, uint8_t* pp,
       }
     }
     DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-        "nfa_ee_route_add_one_ecb_by_route_order --num_tlv:- %d", num_tlv);
+        "nfa_ee_add_sys_code_route_to_ecb --num_tlv:- %d", num_tlv);
   } else {
     DLOG_IF(INFO, nfc_debug_enabled)
         << StringPrintf("%s - No SC entries available", __func__);
@@ -561,7 +681,8 @@ static void nfa_ee_conn_cback(uint8_t conn_id, tNFC_CONN_EVT event,
 int nfa_ee_find_max_aid_cfg_len(void) {
   int max_lmrt_size = NFC_GetLmrtSize();
   if (max_lmrt_size) {
-    return max_lmrt_size - NFA_EE_MAX_PROTO_TECH_EXT_ROUTE_LEN;
+    return max_lmrt_size - (NFA_EE_MAX_PROTO_TECH_EXT_ROUTE_LEN +
+                            NFA_EE_MAX_SYSTEM_CODE_CFG_LEN);
   } else {
     return NFA_EE_MAX_AID_CFG_LEN;
   }
@@ -747,9 +868,6 @@ void nfa_ee_report_event(tNFA_EE_CBACK* p_cback, tNFA_EE_EVT event,
 **
 *******************************************************************************/
 void nfa_ee_start_timer(void) {
-  if (nfa_dm_is_active())
-    nfa_sys_start_timer(&nfa_ee_cb.timer, NFA_EE_ROUT_TIMEOUT_EVT,
-                        NFA_EE_ROUT_TIMEOUT_VAL);
 }
 
 /*******************************************************************************
@@ -766,7 +884,7 @@ void nfa_ee_api_discover(tNFA_EE_MSG* p_data) {
   tNFA_EE_CBACK_DATA evt_data = {0};
 
   DLOG_IF(INFO, nfc_debug_enabled)
-      << StringPrintf("in_use:%d", nfa_ee_cb.discv_timer.in_use);
+      << StringPrintf("%s - in_use:%d", __func__, nfa_ee_cb.discv_timer.in_use);
   if (nfa_ee_cb.discv_timer.in_use) {
     nfa_sys_stop_timer(&nfa_ee_cb.discv_timer);
     if (NFA_GetNCIVersion() != NCI_VERSION_2_0) NFC_NfceeDiscover(false);
@@ -816,32 +934,6 @@ void nfa_ee_api_register(tNFA_EE_MSG* p_data) {
     }
   }
 
-  int max_aid_cfg_length = nfa_ee_find_max_aid_cfg_len();
-  int max_aid_entries = max_aid_cfg_length / NFA_MIN_AID_LEN + 1;
-
-  DLOG_IF(INFO, nfc_debug_enabled)
-      << StringPrintf("max_aid_cfg_length: %d and max_aid_entries: %d",
-                      max_aid_cfg_length, max_aid_entries);
-
-  for (xx = 0; xx < NFA_EE_NUM_ECBS; xx++) {
-    nfa_ee_cb.ecb[xx].aid_len = (uint8_t*)GKI_getbuf(max_aid_entries);
-    nfa_ee_cb.ecb[xx].aid_pwr_cfg = (uint8_t*)GKI_getbuf(max_aid_entries);
-    nfa_ee_cb.ecb[xx].aid_rt_info = (uint8_t*)GKI_getbuf(max_aid_entries);
-    nfa_ee_cb.ecb[xx].aid_info = (uint8_t*)GKI_getbuf(max_aid_entries);
-    nfa_ee_cb.ecb[xx].aid_cfg = (uint8_t*)GKI_getbuf(max_aid_cfg_length);
-    if ((NULL != nfa_ee_cb.ecb[xx].aid_len) &&
-        (NULL != nfa_ee_cb.ecb[xx].aid_pwr_cfg) &&
-        (NULL != nfa_ee_cb.ecb[xx].aid_info) &&
-        (NULL != nfa_ee_cb.ecb[xx].aid_cfg)) {
-      memset(nfa_ee_cb.ecb[xx].aid_len, 0, max_aid_entries);
-      memset(nfa_ee_cb.ecb[xx].aid_pwr_cfg, 0, max_aid_entries);
-      memset(nfa_ee_cb.ecb[xx].aid_rt_info, 0, max_aid_entries);
-      memset(nfa_ee_cb.ecb[xx].aid_info, 0, max_aid_entries);
-      memset(nfa_ee_cb.ecb[xx].aid_cfg, 0, max_aid_cfg_length);
-    } else {
-      LOG(ERROR) << StringPrintf("GKI_getbuf allocation for ECB failed !");
-    }
-  }
 
   /* This callback is verified (not NULL) in NFA_EeRegister() */
   (*p_cback)(NFA_EE_REGISTER_EVT, &evt_data);
@@ -867,13 +959,6 @@ void nfa_ee_api_deregister(tNFA_EE_MSG* p_data) {
 
   DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf("nfa_ee_api_deregister");
 
-  for (int xx = 0; xx < NFA_EE_NUM_ECBS; xx++) {
-    GKI_freebuf(nfa_ee_cb.ecb[xx].aid_len);
-    GKI_freebuf(nfa_ee_cb.ecb[xx].aid_pwr_cfg);
-    GKI_freebuf(nfa_ee_cb.ecb[xx].aid_rt_info);
-    GKI_freebuf(nfa_ee_cb.ecb[xx].aid_info);
-    GKI_freebuf(nfa_ee_cb.ecb[xx].aid_cfg);
-  }
 
   p_cback = nfa_ee_cb.p_ee_cback[index];
   nfa_ee_cb.p_ee_cback[index] = nullptr;
@@ -892,8 +977,9 @@ void nfa_ee_api_deregister(tNFA_EE_MSG* p_data) {
 void nfa_ee_api_mode_set(tNFA_EE_MSG* p_data) {
   tNFA_EE_ECB* p_cb = p_data->cfg_hdr.p_cb;
   tNFA_EE_MODE_SET mode_set;
-  DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-      "handle:0x%02x mode:%d", p_cb->nfcee_id, p_data->mode_set.mode);
+  DLOG_IF(INFO, nfc_debug_enabled)
+      << StringPrintf("%s - handle:0x%02x mode:%d", __func__, p_cb->nfcee_id,
+                      p_data->mode_set.mode);
   mode_set.status = NFC_NfceeModeSet(p_cb->nfcee_id, p_data->mode_set.mode);
   if (mode_set.status != NFC_STATUS_OK) {
     /* the api is rejected at NFC layer, report the failure status right away */
@@ -980,6 +1066,7 @@ void nfa_ee_api_set_tech_cfg(tNFA_EE_MSG* p_data) {
        * configured */
       nfa_ee_cb.ee_cfged |= nfa_ee_ecb_to_mask(p_cb);
     }
+
     nfa_ee_start_timer();
   }
   nfa_ee_report_event(p_cb->p_ee_cback, NFA_EE_SET_TECH_CFG_EVT, &evt_data);
@@ -1094,6 +1181,7 @@ void nfa_ee_api_set_proto_cfg(tNFA_EE_MSG* p_data) {
        * configured */
       nfa_ee_cb.ee_cfged |= nfa_ee_ecb_to_mask(p_cb);
     }
+
     nfa_ee_start_timer();
   }
   nfa_ee_report_event(p_cb->p_ee_cback, NFA_EE_SET_PROTO_CFG_EVT, &evt_data);
@@ -1183,7 +1271,8 @@ void nfa_ee_api_add_aid(tNFA_EE_MSG* p_data) {
       p_cb->aid_info[entry] = p_add->aidInfo;
       new_size = nfa_ee_total_lmrt_size();
       if (new_size > NFC_GetLmrtSize()) {
-        LOG(ERROR) << StringPrintf("Exceed LMRT size:%d (add ROUTE)", new_size);
+        LOG(ERROR) << StringPrintf("%s - Exceed LMRT size:%d (add ROUTE)",
+                                   __func__, new_size);
         evt_data.status = NFA_STATUS_BUFFER_FULL;
         p_cb->aid_rt_info[entry] &= ~NFA_EE_AE_ROUTE;
       } else {
@@ -1191,9 +1280,9 @@ void nfa_ee_api_add_aid(tNFA_EE_MSG* p_data) {
       }
     } else {
       LOG(ERROR) << StringPrintf(
-          "The AID entry is already in the database for different NFCEE "
+          "%s - The AID entry is already in the database for different NFCEE "
           "ID:0x%02x",
-          p_chk_cb->nfcee_id);
+          __func__, p_chk_cb->nfcee_id);
       evt_data.status = NFA_STATUS_SEMANTIC_ERROR;
     }
   } else {
@@ -1205,15 +1294,16 @@ void nfa_ee_api_add_aid(tNFA_EE_MSG* p_data) {
 
     if ((len_needed + len) > max_aid_cfg_length) {
       LOG(ERROR) << StringPrintf(
-          "Exceed capacity: (len_needed:%d + len:%d) > "
+          "%s - Exceed capacity: (len_needed:%d + len:%d) > "
           "NFA_EE_MAX_AID_CFG_LEN:%d",
-          len_needed, len, max_aid_cfg_length);
+          __func__, len_needed, len, max_aid_cfg_length);
       evt_data.status = NFA_STATUS_BUFFER_FULL;
     } else if (p_cb->aid_entries < max_aid_entries) {
       /* 4 = 1 (tag) + 1 (len) + 1(nfcee_id) + 1(power cfg) */
       new_size = nfa_ee_total_lmrt_size() + 4 + p_add->aid_len;
       if (new_size > NFC_GetLmrtSize()) {
-        LOG(ERROR) << StringPrintf("Exceed LMRT size:%d", new_size);
+        LOG(ERROR) << StringPrintf("%s - Exceed LMRT size:%d", __func__,
+                                   new_size);
         evt_data.status = NFA_STATUS_BUFFER_FULL;
       } else {
         /* add AID */
@@ -1230,8 +1320,8 @@ void nfa_ee_api_add_aid(tNFA_EE_MSG* p_data) {
         p_cb->aid_len[p_cb->aid_entries++] = (uint8_t)(p - p_start);
       }
     } else {
-      LOG(ERROR) << StringPrintf("Exceed NFA_EE_MAX_AID_ENTRIES:%d",
-                                 max_aid_entries);
+      LOG(ERROR) << StringPrintf("%s - Exceed NFA_EE_MAX_AID_ENTRIES:%d",
+                                 __func__, max_aid_entries);
       evt_data.status = NFA_STATUS_BUFFER_FULL;
     }
   }
@@ -1241,10 +1331,12 @@ void nfa_ee_api_add_aid(tNFA_EE_MSG* p_data) {
     p_cb->ecb_flags |= NFA_EE_ECB_FLAGS_AID;
     nfa_ee_cb.ee_cfged |= nfa_ee_ecb_to_mask(p_cb);
     nfa_ee_update_route_aid_size(p_cb);
+
     nfa_ee_start_timer();
   }
-  DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-      "status:%d ee_cfged:0x%02x ", evt_data.status, nfa_ee_cb.ee_cfged);
+  DLOG_IF(INFO, nfc_debug_enabled)
+      << StringPrintf("%s - status:%d ee_cfged:0x%02x ", __func__,
+                      evt_data.status, nfa_ee_cb.ee_cfged);
   if (evt_data.status == NFA_STATUS_BUFFER_FULL)
     android::util::stats_write(android::util::NFC_ERROR_OCCURRED,
                                (int32_t)AID_OVERFLOW, 0, 0);
@@ -1275,8 +1367,9 @@ void nfa_ee_api_remove_aid(tNFA_EE_MSG* p_data) {
   p_cb = nfa_ee_find_aid_offset(p_data->rm_aid.aid_len, p_data->rm_aid.p_aid,
                                 &offset, &entry);
   if (p_cb && p_cb->aid_entries) {
-    DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-        "aid_rt_info[%d]: 0x%02x", entry, p_cb->aid_rt_info[entry]);
+    DLOG_IF(INFO, nfc_debug_enabled)
+        << StringPrintf("%s - aid_rt_info[%d]: 0x%02x", __func__, entry,
+                        p_cb->aid_rt_info[entry]);
     /* mark routing and VS changed */
     if (p_cb->aid_rt_info[entry] & NFA_EE_AE_ROUTE)
       p_cb->ecb_flags |= NFA_EE_ECB_FLAGS_AID;
@@ -1306,9 +1399,38 @@ void nfa_ee_api_remove_aid(tNFA_EE_MSG* p_data) {
     p_cb->aid_entries--;
     nfa_ee_cb.ee_cfged |= nfa_ee_ecb_to_mask(p_cb);
     nfa_ee_update_route_aid_size(p_cb);
-    nfa_ee_start_timer();
     /* report NFA_EE_REMOVE_AID_EVT to the callback associated the NFCEE */
     p_cback = p_cb->p_ee_cback;
+  } else if (0 == memcmp(NFA_REMOVE_ALL_AID, p_data->rm_aid.p_aid,
+                         p_data->rm_aid.aid_len)) {
+    int max_aid_cfg_length = nfa_ee_find_max_aid_cfg_len();
+    int max_aid_entries = max_aid_cfg_length / NFA_MIN_AID_LEN + 1;
+
+    /*Clear All AIDs*/
+    uint32_t xx;
+    tNFA_EE_ECB* p_cb = nfa_ee_cb.ecb;
+    for (xx = 0; xx < NFA_EE_MAX_EE_SUPPORTED; xx++, p_cb++) {
+      memset(&p_cb->aid_cfg[0], 0x00, sizeof(p_cb->aid_cfg));
+      memset(&p_cb->aid_len[0], 0x00, max_aid_entries);
+      memset(&p_cb->aid_pwr_cfg[0], 0x00, max_aid_entries);
+      memset(&p_cb->aid_rt_info[0], 0x00, max_aid_entries);
+      p_cb->aid_entries = 0;
+
+      p_cb->size_aid = 0;
+
+      nfa_ee_cb.ee_cfged |= nfa_ee_ecb_to_mask(p_cb);
+    }
+    tNFA_EE_ECB* p_ecb = &nfa_ee_cb.ecb[NFA_EE_CB_4_DH];
+    memset(&p_ecb->aid_cfg[0], 0x00, sizeof(p_ecb->aid_cfg));
+    memset(&p_ecb->aid_len[0], 0x00, max_aid_entries);
+    memset(&p_ecb->aid_pwr_cfg[0], 0x00, max_aid_entries);
+    memset(&p_ecb->aid_rt_info[0], 0x00, max_aid_entries);
+    p_ecb->aid_entries = 0;
+
+    p_ecb->size_aid = 0;
+
+    p_cb->ecb_flags |= NFA_EE_ECB_FLAGS_AID;
+    nfa_ee_cb.ee_cfged |= nfa_ee_ecb_to_mask(p_ecb);
   } else {
     LOG(ERROR) << StringPrintf(
         "nfa_ee_api_remove_aid The AID entry is not in the database");
@@ -1350,8 +1472,8 @@ void nfa_ee_api_add_sys_code(tNFA_EE_MSG* p_data) {
       p_cb->sys_code_rt_loc_vs_info[entry] |= NFA_EE_AE_ROUTE;
       uint16_t new_size = nfa_ee_total_lmrt_size();
       if (new_size > NFC_GetLmrtSize()) {
-        LOG(ERROR) << StringPrintf("Exceeded LMRT size:%d (add SYSCODE)",
-                                   new_size);
+        LOG(ERROR) << StringPrintf("%s - Exceeded LMRT size:%d (add SYSCODE)",
+                                   __func__, new_size);
         evt_data.status = NFA_STATUS_BUFFER_FULL;
         p_cb->sys_code_rt_loc_vs_info[entry] &= ~NFA_EE_AE_ROUTE;
       } else {
@@ -1371,16 +1493,19 @@ void nfa_ee_api_add_sys_code(tNFA_EE_MSG* p_data) {
     if ((NFA_EE_SYSTEM_CODE_LEN + total_sc_len) >
         NFA_EE_MAX_SYSTEM_CODE_CFG_LEN) {
       LOG(ERROR) << StringPrintf(
-          "Exceeded capacity: (NFA_EE_SYSTEM_CODE_LEN:%d + total_sc_len:%d) > "
+          "%s - Exceeded capacity: (NFA_EE_SYSTEM_CODE_LEN:%d + "
+          "total_sc_len:%d) > "
           "NFA_EE_MAX_SYSTEM_CODE_CFG_LEN:%d",
-          NFA_EE_SYSTEM_CODE_LEN, total_sc_len, NFA_EE_MAX_SYSTEM_CODE_CFG_LEN);
+          __func__, NFA_EE_SYSTEM_CODE_LEN, total_sc_len,
+          NFA_EE_MAX_SYSTEM_CODE_CFG_LEN);
       evt_data.status = NFA_STATUS_BUFFER_FULL;
     } else if (p_cb->sys_code_cfg_entries < NFA_EE_MAX_SYSTEM_CODE_ENTRIES) {
       /* 6 = 1 (tag) + 1 (len) + 1(nfcee_id) + 1(power cfg) + 2(system code)*/
       uint16_t new_size =
           nfa_ee_total_lmrt_size() + NFA_EE_SYSTEM_CODE_TLV_SIZE;
       if (new_size > NFC_GetLmrtSize()) {
-        LOG(ERROR) << StringPrintf("Exceeded LMRT size:%d", new_size);
+        LOG(ERROR) << StringPrintf("%s - Exceeded LMRT size:%d", __func__,
+                                   new_size);
         evt_data.status = NFA_STATUS_BUFFER_FULL;
       } else {
         /* add SC entry*/
@@ -1397,18 +1522,19 @@ void nfa_ee_api_add_sys_code(tNFA_EE_MSG* p_data) {
         p_cb->sys_code_cfg_entries++;
       }
     } else {
-      LOG(ERROR) << StringPrintf("Exceeded NFA_EE_MAX_SYSTEM_CODE_ENTRIES:%d",
-                                 NFA_EE_MAX_SYSTEM_CODE_ENTRIES);
+      LOG(ERROR) << StringPrintf(
+          "%s - Exceeded NFA_EE_MAX_SYSTEM_CODE_ENTRIES:%d", __func__,
+          NFA_EE_MAX_SYSTEM_CODE_ENTRIES);
       evt_data.status = NFA_STATUS_BUFFER_FULL;
     }
   }
 
   if (evt_data.status == NFA_STATUS_OK) {
     /* mark SC changed */
-    p_cb->ecb_flags |= NFA_EE_ECB_FLAGS_SYSCODE;
+    if (p_cb->sys_code_rt_loc_vs_info[entry] & NFA_EE_AE_ROUTE)
+      p_cb->ecb_flags |= NFA_EE_ECB_FLAGS_ROUTING;
     nfa_ee_cb.ee_cfged |= nfa_ee_ecb_to_mask(p_cb);
     nfa_ee_update_route_sys_code_size(p_cb);
-    nfa_ee_start_timer();
   }
   DLOG_IF(INFO, nfc_debug_enabled)
       << StringPrintf("%s: status:%d ee_cfged:0x%02x ", __func__,
@@ -1442,12 +1568,11 @@ void nfa_ee_api_remove_sys_code(tNFA_EE_MSG* p_data) {
 
   if (p_cb && p_cb->sys_code_cfg_entries) {
     DLOG_IF(INFO, nfc_debug_enabled)
-        << StringPrintf("sys_code_rt_loc_vs_info[%d]: 0x%02x", entry,
-                        p_cb->sys_code_rt_loc_vs_info[entry]);
+        << StringPrintf("%s - sys_code_rt_loc_vs_info[%d]: 0x%02x", __func__,
+                        entry, p_cb->sys_code_rt_loc_vs_info[entry]);
     /* mark routing and VS changed */
     if (p_cb->sys_code_rt_loc_vs_info[entry] & NFA_EE_AE_ROUTE)
-      p_cb->ecb_flags |= NFA_EE_ECB_FLAGS_SYSCODE;
-
+      p_cb->ecb_flags |= NFA_EE_ECB_FLAGS_ROUTING;
     if (p_cb->sys_code_rt_loc_vs_info[entry] & NFA_EE_AE_VS)
       p_cb->ecb_flags |= NFA_EE_ECB_FLAGS_VS;
 
@@ -1481,12 +1606,12 @@ void nfa_ee_api_remove_sys_code(tNFA_EE_MSG* p_data) {
     p_cb->sys_code_cfg_entries--;
     nfa_ee_cb.ee_cfged |= nfa_ee_ecb_to_mask(p_cb);
     nfa_ee_update_route_sys_code_size(p_cb);
-    nfa_ee_start_timer();
   } else {
     LOG(ERROR) << StringPrintf(
         "nfa_ee_api_remove_sys_code: The SC entry is not in the database");
     evt_data.status = NFA_STATUS_INVALID_PARAM;
   }
+
   /* report the status of this operation */
   if (p_cb) {
     nfa_ee_report_event(p_cb->p_ee_cback, NFA_EE_REMOVE_SYSCODE_EVT, &evt_data);
@@ -1643,6 +1768,275 @@ void nfa_ee_api_disconnect(tNFA_EE_MSG* p_data) {
 
 /*******************************************************************************
 **
+** Function         nfa_ee_api_power_ctrl
+**
+** Description      Initiates closing of the connection to the given NFCEE
+**
+** Returns          void
+**
+*******************************************************************************/
+void nfa_ee_api_power_ctrl(tNFA_EE_MSG* p_data) {
+  DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+      "nfa_ee_api_power_ctrl() - nfcee_id = 0x%x, config = 0x%x",
+      p_data->power_ctrl.nfcee_id, p_data->power_ctrl.config);
+
+  // NFC_PowerAndLinkCntrl(p_data->power_ctrl.nfcee_id,
+  // p_data->power_ctrl.config);
+  NFC_NfceePLConfig(p_data->power_ctrl.nfcee_id,
+                    (tNCI_NFCEE_PL_CONFIG)p_data->power_ctrl.config);
+}
+
+/*******************************************************************************
+**
+** Function         nfa_ee_api_force_routing
+**
+** Description      Forces routing to the given NFCEE
+**
+** Returns          void
+**
+*******************************************************************************/
+void nfa_ee_api_force_routing(tNFA_EE_MSG* p_data) {
+  DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+      "nfa_ee_api_force_routing() - nfcee_id = 0x%x, config = 0x%x",
+      p_data->force_routing.nfcee_id, p_data->force_routing.config);
+
+  NFC_SetForcedNfceeRouting(true, p_data->force_routing.nfcee_id,
+                            p_data->force_routing.config);
+
+  if (p_data->force_routing.nfcee_id == 0x00) {
+    nfa_ee_cb.forced_routing_on_dh = TRUE;
+  } else {
+    nfa_ee_cb.forced_routing_on_dh = FALSE;
+  }
+}
+
+/*******************************************************************************
+**
+** Function         nfa_ee_api_stop_orce_routing
+**
+** Description      Stop forcing routing.
+**
+** Returns          void
+**
+*******************************************************************************/
+void nfa_ee_api_stop_force_routing(__attribute__((unused))
+                                   tNFA_EE_MSG* p_data) {
+  DLOG_IF(INFO, nfc_debug_enabled)
+      << StringPrintf("nfa_ee_api_stop_force_routing()");
+
+  NFC_SetForcedNfceeRouting(false, 0, 0);
+
+  nfa_ee_cb.forced_routing_on_dh = false;
+}
+
+void nfa_ee_api_clear_routing_table(tNFA_EE_MSG* p_data) {
+  DLOG_IF(INFO, nfc_debug_enabled)
+      << StringPrintf("nfa_ee_api_clear_routing_table()");
+
+  uint32_t xx;
+  tNFA_EE_ECB* p_cb = nfa_ee_cb.ecb;
+
+  tNFA_EE_ECB* p_ecb = &nfa_ee_cb.ecb[NFA_EE_CB_4_DH];
+
+  /******************************************/
+  /************* Clear All proto *************/
+  /******************************************/
+  p_cb = nfa_ee_cb.ecb;
+  for (xx = 0; xx < NFA_EE_MAX_EE_SUPPORTED; xx++, p_cb++) {
+    p_cb->size_mask_proto = 0;
+    p_cb->proto_battery_off = 0;
+    p_cb->proto_screen_lock = 0;
+    p_cb->proto_screen_off = 0;
+    p_cb->proto_screen_off_lock = 0;
+    p_cb->proto_switch_off = 0;
+    p_cb->proto_switch_on = 0;
+  }
+
+  p_ecb->size_mask_proto = 0;
+  p_ecb->proto_battery_off = 0;
+  p_ecb->proto_screen_lock = 0;
+  p_ecb->proto_screen_off = 0;
+  p_ecb->proto_screen_off_lock = 0;
+  p_ecb->proto_switch_off = 0;
+  p_ecb->proto_switch_on = 0;
+
+  /******************************************/
+  /************* Clear All tech *************/
+  /******************************************/
+  p_cb = nfa_ee_cb.ecb;
+  for (xx = 0; xx < NFA_EE_MAX_EE_SUPPORTED; xx++, p_cb++) {
+    p_cb->size_mask_tech = 0;
+    p_cb->tech_battery_off = 0;
+    p_cb->tech_screen_lock = 0;
+    p_cb->tech_screen_off = 0;
+    p_cb->tech_screen_off_lock = 0;
+    p_cb->tech_switch_off = 0;
+    p_cb->tech_switch_on = 0;
+  }
+
+  p_ecb->size_mask_tech = 0;
+  p_ecb->tech_battery_off = 0;
+  p_ecb->tech_screen_lock = 0;
+  p_ecb->tech_screen_off = 0;
+  p_ecb->tech_screen_off_lock = 0;
+  p_ecb->tech_switch_off = 0;
+  p_ecb->tech_switch_on = 0;
+
+  /******************************************/
+  /************* Clear All SC *************/
+  /******************************************/
+  if (p_data->clear_routing_table.clear_sc == true) {
+    p_cb = nfa_ee_cb.ecb;
+    for (xx = 0; xx < NFA_EE_MAX_EE_SUPPORTED; xx++, p_cb++) {
+      memset(&p_cb->sys_code_cfg[0], 0x00, sizeof(p_cb->sys_code_cfg));
+      memset(&p_cb->sys_code_pwr_cfg[0], 0x00, sizeof(p_cb->sys_code_pwr_cfg));
+      memset(&p_cb->sys_code_rt_loc_vs_info[0], 0x00,
+             sizeof(p_cb->sys_code_rt_loc_vs_info));
+      memset(&p_cb->sys_code_rt_loc[0], 0x00, sizeof(p_cb->sys_code_rt_loc));
+
+      p_cb->sys_code_cfg_entries = 0;
+      p_cb->size_sys_code = 0;
+    }
+
+    memset(&p_ecb->sys_code_cfg[0], 0x00, sizeof(p_ecb->sys_code_cfg));
+    memset(&p_ecb->sys_code_pwr_cfg[0], 0x00, sizeof(p_ecb->sys_code_pwr_cfg));
+    memset(&p_ecb->sys_code_rt_loc_vs_info[0], 0x00,
+           sizeof(p_ecb->sys_code_rt_loc_vs_info));
+    memset(&p_ecb->sys_code_rt_loc[0], 0x00, sizeof(p_ecb->sys_code_rt_loc));
+
+    p_ecb->sys_code_cfg_entries = 0;
+    p_ecb->size_sys_code = 0;
+  }
+}
+
+/*******************************************************************************
+**
+** Function         nfa_ee_get_forced_routing_status
+**
+** Description      Process the callback for NFCEE discovery response
+**
+** Returns          void
+**
+*******************************************************************************/
+bool nfa_ee_get_forced_routing_status() {
+  bool state = nfa_ee_cb.forced_routing_on_dh;
+  DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+      "%s - nfa_ee_get_forced_routing_status() - state:%d", __func__, state);
+  return state;
+}
+
+/*******************************************************************************
+**
+** Function         nfa_ee_api_default_aid_routing
+**
+** Description      Process the callback for NFCEE discovery response
+**
+** Returns          void
+**
+*******************************************************************************/
+void nfa_ee_api_default_aid_routing(tNFA_EE_MSG* p_data) {
+  tNFA_EE_API_DEFAULT_AID_ROUTE* p_add = &p_data->default_aid_route;
+  tNFA_EE_ECB* p_cb = p_data->cfg_hdr.p_cb;
+  tNFA_EE_ECB* p_chk_cb;
+  //  uint8_t *p, *p_start;
+  int len, len_needed;
+  tNFA_EE_CBACK_DATA evt_data = {0};
+  int offset = 0, entry = 0;
+  uint16_t new_size;
+
+  DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+      "nfa_ee_api_default_aid_routing() -  Default AID route: 0x%02X",
+      p_add->nfcee_id);
+
+  int max_aid_cfg_length = nfa_ee_find_max_aid_cfg_len();
+  int max_aid_entries = max_aid_cfg_length / NFA_MIN_AID_LEN + 1;
+
+  p_chk_cb =
+      nfa_ee_find_aid_offset(p_add->aid_len, p_add->p_aid, &offset, &entry);
+  if (p_chk_cb) {
+    DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+        "nfa_ee_api_add_aid The AID entry is already in the database");
+    if (p_chk_cb == p_cb) {
+      p_cb->aid_rt_info[entry] |= NFA_EE_AE_ROUTE;
+      p_cb->aid_info[entry] = p_add->aidInfo;
+      new_size = nfa_ee_total_lmrt_size();
+      if (new_size > NFC_GetLmrtSize()) {
+        LOG(ERROR) << StringPrintf("%s - Exceed LMRT size:%d (add ROUTE)",
+                                   __func__, new_size);
+        evt_data.status = NFA_STATUS_BUFFER_FULL;
+        p_cb->aid_rt_info[entry] &= ~NFA_EE_AE_ROUTE;
+      } else {
+        p_cb->aid_pwr_cfg[entry] = p_add->power_state;
+      }
+    } else {
+      LOG(ERROR) << StringPrintf(
+          "%s - The AID entry is already in the database for different NFCEE "
+          "ID:0x%02x",
+          __func__, p_chk_cb->nfcee_id);
+      evt_data.status = NFA_STATUS_SEMANTIC_ERROR;
+    }
+  } else {
+    /* Find the total length so far */
+    len = nfa_ee_find_total_aid_len(p_cb, 0);
+
+    /* make sure the control block has enough room to hold this entry */
+    len_needed = p_add->aid_len + 2; /* tag/len */
+
+    if ((len_needed + len) > max_aid_cfg_length) {
+      LOG(ERROR) << StringPrintf(
+          "%s - Exceed capacity: (len_needed:%d + len:%d) > "
+          "NFA_EE_MAX_AID_CFG_LEN:%d",
+          __func__, len_needed, len, NFA_EE_MAX_AID_CFG_LEN);
+      evt_data.status = NFA_STATUS_BUFFER_FULL;
+    } else if (p_cb->aid_entries < max_aid_entries) {
+      /* 4 = 1 (tag) + 1 (len) + 1(nfcee_id) + 1(power cfg) */
+      new_size = nfa_ee_total_lmrt_size() + 4 + p_add->aid_len;
+      if (new_size > NFC_GetLmrtSize()) {
+        LOG(ERROR) << StringPrintf("%s - Exceed LMRT size:%d", __func__,
+                                   new_size);
+        evt_data.status = NFA_STATUS_BUFFER_FULL;
+      } else {
+        /* add AID */
+        //        p_cb->aid_pwr_cfg[p_cb->aid_entries] = p_add->power_state;
+        //        p_cb->aid_info[p_cb->aid_entries] = p_add->aidInfo;
+        //        p_cb->aid_rt_info[p_cb->aid_entries] = NFA_EE_AE_ROUTE;
+        //        p = p_cb->aid_cfg + len;
+        //        p_start = p;
+        //        *p++ = NFA_EE_AID_CFG_TAG_NAME;
+        //        *p++ = p_add->aid_len;
+        //        memcpy(p, p_add->p_aid, p_add->aid_len);
+        //        p += p_add->aid_len;
+        //
+        //        p_cb->aid_len[p_cb->aid_entries++] = (uint8_t)(p - p_start);
+
+        nfa_ee_cb.default_aid_route = p_data->default_aid_route.nfcee_id;
+        nfa_ee_cb.default_aid_power_state =
+            p_data->default_aid_route.power_state;
+      }
+    } else {
+      LOG(ERROR) << StringPrintf("%s - Exceed NFA_EE_MAX_AID_ENTRIES:%d",
+                                 __func__, max_aid_entries);
+      evt_data.status = NFA_STATUS_BUFFER_FULL;
+    }
+  }
+
+  if (evt_data.status == NFA_STATUS_OK) {
+    /* mark AID changed */
+    p_cb->ecb_flags |= NFA_EE_ECB_FLAGS_AID;
+    nfa_ee_cb.ee_cfged |= nfa_ee_ecb_to_mask(p_cb);
+    nfa_ee_update_route_aid_size(p_cb);
+  }
+  DLOG_IF(INFO, nfc_debug_enabled)
+      << StringPrintf("%s - status:%d ee_cfged:0x%02x ", __func__,
+                      evt_data.status, nfa_ee_cb.ee_cfged);
+  if (evt_data.status == NFA_STATUS_BUFFER_FULL)
+    android::util::stats_write(android::util::NFC_ERROR_OCCURRED,
+                               (int32_t)AID_OVERFLOW, 0, 0);
+  /* report the status of this operation */
+  nfa_ee_report_event(p_cb->p_ee_cback, NFA_EE_ADD_AID_EVT, &evt_data);
+}
+/*******************************************************************************
+**
 ** Function         nfa_ee_report_disc_done
 **
 ** Description      Process the callback for NFCEE discovery response
@@ -1655,9 +2049,10 @@ void nfa_ee_report_disc_done(bool notify_enable_done) {
   tNFA_EE_CBACK_DATA evt_data = {0};
 
   DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-      "em_state:%d num_ee_expecting:%d "
+      "%s - em_state:%d num_ee_expecting:%d "
       "notify_enable_done:%d",
-      nfa_ee_cb.em_state, nfa_ee_cb.num_ee_expecting, notify_enable_done);
+      __func__, nfa_ee_cb.em_state, nfa_ee_cb.num_ee_expecting,
+      notify_enable_done);
   if (nfa_ee_cb.num_ee_expecting == 0) {
     if (notify_enable_done) {
       if (nfa_ee_cb.em_state == NFA_EE_EM_STATE_INIT_DONE) {
@@ -1738,8 +2133,8 @@ static void nfa_ee_remove_pending(void) {
   }
 
   DLOG_IF(INFO, nfc_debug_enabled)
-      << StringPrintf("cur_ee:%d, num_removed:%d first_removed:%d",
-                      nfa_ee_cb.cur_ee, num_removed, first_removed);
+      << StringPrintf("%s - cur_ee:%d, num_removed:%d first_removed:%d",
+                      __func__, nfa_ee_cb.cur_ee, num_removed, first_removed);
   if (num_removed && (first_removed != (nfa_ee_cb.cur_ee - num_removed))) {
     /* if the removes ECB entried are not at the end, move the entries up */
     p_cb_end = nullptr;
@@ -1778,8 +2173,8 @@ void nfa_ee_nci_disc_rsp(tNFA_EE_MSG* p_data) {
   bool notify_enable_done = false;
 
   DLOG_IF(INFO, nfc_debug_enabled)
-      << StringPrintf("em_state:%d cur_ee:%d, num_nfcee:%d", nfa_ee_cb.em_state,
-                      nfa_ee_cb.cur_ee, num_nfcee);
+      << StringPrintf("%s - em_state:%d cur_ee:%d, num_nfcee:%d", __func__,
+                      nfa_ee_cb.em_state, nfa_ee_cb.cur_ee, num_nfcee);
   switch (nfa_ee_cb.em_state) {
     case NFA_EE_EM_STATE_INIT:
       nfa_ee_cb.cur_ee = 0;
@@ -1826,15 +2221,15 @@ void nfa_ee_nci_disc_rsp(tNFA_EE_MSG* p_data) {
   if (p_evt->status == NFC_STATUS_OK) {
     nfa_ee_cb.num_ee_expecting = p_evt->num_nfcee;
     if (nfa_ee_cb.num_ee_expecting > NFA_EE_MAX_EE_SUPPORTED) {
-      LOG(ERROR) << StringPrintf("NFA-EE num_ee_expecting:%d > max:%d",
-                                 nfa_ee_cb.num_ee_expecting,
+      LOG(ERROR) << StringPrintf("%s - NFA-EE num_ee_expecting:%d > max:%d",
+                                 __func__, nfa_ee_cb.num_ee_expecting,
                                  NFA_EE_MAX_EE_SUPPORTED);
     }
   }
   nfa_ee_report_disc_done(notify_enable_done);
   DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-      "em_state:%d cur_ee:%d num_ee_expecting:%d", nfa_ee_cb.em_state,
-      nfa_ee_cb.cur_ee, nfa_ee_cb.num_ee_expecting);
+      "%s - em_state:%d cur_ee:%d num_ee_expecting:%d", __func__,
+      nfa_ee_cb.em_state, nfa_ee_cb.cur_ee, nfa_ee_cb.num_ee_expecting);
 }
 
 /*******************************************************************************
@@ -1856,9 +2251,9 @@ void nfa_ee_nci_disc_ntf(tNFA_EE_MSG* p_data) {
   tNFA_EE_EM_STATE new_em_state = NFA_EE_EM_STATE_MAX;
 
   DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-      "em_state:%d ee_flags:0x%x cur_ee:%d "
+      "%s - em_state:%d ee_flags:0x%x cur_ee:%d "
       "num_ee_expecting:%d",
-      nfa_ee_cb.em_state, nfa_ee_cb.ee_flags, nfa_ee_cb.cur_ee,
+      __func__, nfa_ee_cb.em_state, nfa_ee_cb.ee_flags, nfa_ee_cb.cur_ee,
       nfa_ee_cb.num_ee_expecting);
   if (nfa_ee_cb.num_ee_expecting) {
     nfa_ee_cb.num_ee_expecting--;
@@ -1896,28 +2291,11 @@ void nfa_ee_nci_disc_ntf(tNFA_EE_MSG* p_data) {
         nfa_ee_cb.cur_ee++;
         notify_new_ee = true;
       } else {
-        DLOG_IF(INFO, nfc_debug_enabled)
-            << StringPrintf("cur_ee:%d ecb_flags=0x%02x  ee_status=0x%x",
-                            nfa_ee_cb.cur_ee, p_cb->ecb_flags, p_cb->ee_status);
-      }
-      break;
-
-    case NFA_EE_EM_STATE_RESTORING:
-      p_cb = nfa_ee_find_ecb(p_ee->nfcee_id);
-      if (p_cb == nullptr) {
-        /* the NFCEE ID is not in the last NFCEE discovery
-         * maybe it's a new one */
-        p_cb = nfa_ee_find_ecb(NFA_EE_INVALID);
-        if (p_cb) {
-          nfa_ee_cb.cur_ee++;
-          notify_new_ee = true;
-        }
-      }
-      if (nfa_ee_cb.num_ee_expecting == 0) {
-        /* notify init_done callback */
-        notify_enable_done = true;
-        if (nfa_ee_restore_ntf_done()) {
-          new_em_state = NFA_EE_EM_STATE_INIT_DONE;
+        DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+            "%s - cur_ee:%d ecb_flags=0x%02x  ee_status=0x%x", __func__,
+            nfa_ee_cb.cur_ee, p_cb->ecb_flags, p_cb->ee_status);
+        if (nfa_ee_cb.num_ee_expecting == 0) {
+          notify_enable_done = true;
         }
       }
       break;
@@ -1934,20 +2312,6 @@ void nfa_ee_nci_disc_ntf(tNFA_EE_MSG* p_data) {
     memcpy(p_cb->ee_tlv, p_ee->ee_tlv, p_ee->num_tlvs * sizeof(tNFA_EE_TLV));
     if (NFA_GetNCIVersion() == NCI_VERSION_2_0)
       p_cb->ee_power_supply_status = p_ee->nfcee_power_ctrl;
-    if (nfa_ee_cb.em_state == NFA_EE_EM_STATE_RESTORING) {
-      /* NCI spec says: An NFCEE_DISCOVER_NTF that contains a Protocol type of
-       * "HCI Access"
-       * SHALL NOT contain any other additional Protocol
-       * i.e. check only first supported NFCEE interface is HCI access */
-      /* NFA_HCI module handles restoring configurations for HCI access */
-      if (p_cb->ee_interface[0] != NFC_NFCEE_INTERFACE_HCI_ACCESS) {
-        if ((nfa_ee_cb.ee_flags & NFA_EE_FLAG_WAIT_HCI) == 0) {
-          nfa_ee_restore_one_ecb(p_cb);
-        }
-        /* else wait for NFA-HCI module to restore the HCI network information
-         * before enabling the NFCEE */
-      }
-    }
 
     if ((nfa_ee_cb.p_ee_disc_cback == nullptr) && (notify_new_ee == true)) {
       if (nfa_dm_is_active() && (p_cb->ee_status != NFA_EE_STATUS_REMOVED)) {
@@ -1965,12 +2329,21 @@ void nfa_ee_nci_disc_ntf(tNFA_EE_MSG* p_data) {
           p_info->ee_power_supply_status = p_cb->ee_power_supply_status;
         nfa_ee_report_event(nullptr, NFA_EE_NEW_EE_EVT, &evt_data);
       }
-    } else
-      nfa_ee_report_disc_done(notify_enable_done);
+    }
+    if (notify_enable_done == true) {
+      if (nfa_ee_cb.discv_timer.in_use) {
+        nfa_sys_stop_timer(&nfa_ee_cb.discv_timer);
+      }
+
+      // report discovery is done
+      nfa_ee_report_disc_done(true);
+      if (nfa_ee_cb.p_enable_cback)
+        (*nfa_ee_cb.p_enable_cback)(NFA_EE_DISC_STS_OFF);
+    }
 
     if (p_cb->ecb_flags & NFA_EE_ECB_FLAGS_ORDER) {
       DLOG_IF(INFO, nfc_debug_enabled)
-          << StringPrintf("NFA_EE_ECB_FLAGS_ORDER");
+          << StringPrintf("%s - NFA_EE_ECB_FLAGS_ORDER", __func__);
       p_cb->ecb_flags &= ~NFA_EE_ECB_FLAGS_ORDER;
       nfa_ee_report_discover_req_evt();
     }
@@ -2001,13 +2374,34 @@ void nfa_ee_nci_disc_ntf(tNFA_EE_MSG* p_data) {
 **
 *******************************************************************************/
 void nfa_ee_nci_nfcee_status_ntf(tNFA_EE_MSG* p_data) {
+  tNFA_EE_ECB* p_cb;
+  tNFC_NFCEE_STATUS_REVT* p_rsp = p_data->nfcee_status_ntf.p_data;
+  tNFA_EE_STATUS_NTF status_ntf;
+
+  DLOG_IF(INFO, nfc_debug_enabled)
+      << StringPrintf("nfa_ee_nci_nfcee_status_ntf() handle:0x%02x status:%d",
+                      p_rsp->nfcee_id, p_rsp->nfcee_status);
+  p_cb = nfa_ee_find_ecb(p_rsp->nfcee_id);
+  if (p_cb == NULL) {
+    LOG(ERROR) << StringPrintf(
+        "%s - nfa_ee_nci_nfcee_status_ntf() Can not find cb for handle:0x%02x",
+        __func__, p_rsp->nfcee_id);
+    return;
+  }
+
+  status_ntf.nfcee_id = p_rsp->nfcee_id;
+  status_ntf.status = p_rsp->nfcee_status;
+
+  tNFA_EE_CBACK_DATA nfa_ee_cback_data;
+  nfa_ee_cback_data.status_ntf = status_ntf;
+  nfa_ee_report_event(p_cb->p_ee_cback, NFA_EE_STATUS_NTF_EVT,
+                      &nfa_ee_cback_data);
   if (p_data != nullptr) {
     tNFC_NFCEE_STATUS_REVT* p_ee_data = p_data->nfcee_status_ntf.p_data;
     if ((NFA_GetNCIVersion() == NCI_VERSION_2_0) &&
         (p_ee_data->nfcee_status == NFC_NFCEE_STATUS_UNRECOVERABLE_ERROR)) {
       tNFA_EE_ECB* p_cb = nfa_ee_find_ecb(p_ee_data->nfcee_id);
       if (p_cb && nfa_ee_cb.p_enable_cback) {
-        (*nfa_ee_cb.p_enable_cback)(NFA_EE_RECOVERY_INIT);
         NFC_NfceeDiscover(true);
       }
     }
@@ -2081,6 +2475,7 @@ static void nfa_ee_build_discover_req_evt(tNFA_EE_DISCOVER_REQ* p_evt_data) {
         (p_cb->ee_status != NFA_EE_STATUS_ACTIVE)) {
       continue;
     }
+
     p_info->ee_handle = (tNFA_HANDLE)p_cb->nfcee_id | NFA_HANDLE_GROUP_EE;
     p_info->la_protocol = p_cb->la_protocol;
     p_info->lb_protocol = p_cb->lb_protocol;
@@ -2090,8 +2485,8 @@ static void nfa_ee_build_discover_req_evt(tNFA_EE_DISCOVER_REQ* p_evt_data) {
     p_info++;
 
     DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-        "[%d] ee_handle:0x%x, listen protocol A:%d, B:%d, F:%d, BP:%d",
-        p_evt_data->num_ee, p_cb->nfcee_id, p_cb->la_protocol,
+        "%s - [%d] ee_handle:0x%x, listen protocol A:%d, B:%d, F:%d, BP:%d",
+        __func__, p_evt_data->num_ee, p_cb->nfcee_id, p_cb->la_protocol,
         p_cb->lb_protocol, p_cb->lf_protocol, p_cb->lbp_protocol);
   }
 
@@ -2107,7 +2502,7 @@ static void nfa_ee_build_discover_req_evt(tNFA_EE_DISCOVER_REQ* p_evt_data) {
 ** Returns          void
 **
 *******************************************************************************/
-static void nfa_ee_report_discover_req_evt(void) {
+void nfa_ee_report_discover_req_evt(void) {
   if (nfa_ee_cb.p_enable_cback)
     (*nfa_ee_cb.p_enable_cback)(NFA_EE_DISC_STS_REQ);
 
@@ -2149,10 +2544,9 @@ void nfa_ee_nci_mode_set_rsp(tNFA_EE_MSG* p_data) {
   /* Do not update routing table in EE_RECOVERY state */
   if (nfa_hci_cb.hci_state != NFA_HCI_STATE_EE_RECOVERY) {
     /* Start routing table update debounce timer */
-    nfa_ee_start_timer();
   }
-  LOG(ERROR) << StringPrintf("%s p_rsp->status:0x%02x", __func__,
-                             p_rsp->status);
+
+  LOG(INFO) << StringPrintf("%s p_rsp->status:0x%02x", __func__, p_rsp->status);
   if (p_rsp->status == NFA_STATUS_OK) {
     if (p_rsp->mode == NFA_EE_MD_ACTIVATE) {
       p_cb->ee_status = NFC_NFCEE_STATUS_ACTIVE;
@@ -2165,8 +2559,8 @@ void nfa_ee_nci_mode_set_rsp(tNFA_EE_MSG* p_data) {
          * configuration */
         nfa_ee_cb.ee_cfged &= ~nfa_ee_ecb_to_mask(p_cb);
         nfa_ee_cb.ee_cfg_sts |= NFA_EE_STS_CHANGED_ROUTING;
-        DLOG_IF(INFO, nfc_debug_enabled)
-            << StringPrintf("deactivating/still configured. Force update");
+        DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+            "%s - deactivating/still configured. Force update", __func__);
       }
       p_cb->tech_switch_on = p_cb->tech_switch_off = p_cb->tech_battery_off = 0;
       p_cb->proto_switch_on = p_cb->proto_switch_off = p_cb->proto_battery_off =
@@ -2178,8 +2572,9 @@ void nfa_ee_nci_mode_set_rsp(tNFA_EE_MSG* p_data) {
     p_cb->ee_status = NFC_NFCEE_STATUS_REMOVED;
   }
   DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-      "status:%d ecb_flags  :0x%02x ee_cfged:0x%02x ee_status:%d",
-      p_rsp->status, p_cb->ecb_flags, nfa_ee_cb.ee_cfged, p_cb->ee_status);
+      "%s - status:%d ecb_flags  :0x%02x ee_cfged:0x%02x ee_status:%d",
+      __func__, p_rsp->status, p_cb->ecb_flags, nfa_ee_cb.ee_cfged,
+      p_cb->ee_status);
   if (p_cb->ecb_flags & NFA_EE_ECB_FLAGS_RESTORE) {
     if (p_cb->conn_st == NFA_EE_CONN_ST_CONN) {
       /* NFA_HCI module handles restoring configurations for HCI access */
@@ -2200,17 +2595,68 @@ void nfa_ee_nci_mode_set_rsp(tNFA_EE_MSG* p_data) {
     nfa_ee_cback_data.mode_set = mode_set;
     nfa_ee_report_event(p_cb->p_ee_cback, NFA_EE_MODE_SET_EVT,
                         &nfa_ee_cback_data);
-
-    if ((p_cb->ee_status == NFC_NFCEE_STATUS_INACTIVE) ||
-        (p_cb->ee_status == NFC_NFCEE_STATUS_ACTIVE)) {
-      /* Report NFA_EE_DISCOVER_REQ_EVT for all active NFCEE */
-      nfa_ee_report_discover_req_evt();
-    }
   }
   if (nfa_ee_cb.p_enable_cback)
     (*nfa_ee_cb.p_enable_cback)(NFA_EE_MODE_SET_COMPLETE);
 }
 
+/*******************************************************************************
+**
+** Function         nfa_ee_nci_power_ctrl_rsp
+**
+** Description      Process the result for NFCEE force routing response
+**
+** Returns          void
+**
+*******************************************************************************/
+void nfa_ee_nci_power_ctrl_rsp(tNFA_EE_MSG* p_data) {
+  tNFA_EE_ECB* p_cb;
+  // tNFC_NFCEE_PL_CONTROL_REVT* p_rsp = p_data->power_ctrl_rsp.p_data;
+  tNFC_NFCEE_PL_CONTROL_REVT* p_rsp =
+      &((tNFC_RESPONSE*)p_data->wait_rsp.p_data)->pl_control;
+  tNFA_EE_POWER_CTRL_RSP power_ctrl_rsp;
+
+  DLOG_IF(INFO, nfc_debug_enabled)
+      << StringPrintf("nfa_ee_nci_power_ctrl_rsp() handle:0x%02x status:%d",
+                      p_rsp->nfcee_id, p_rsp->status);
+
+  p_cb = nfa_ee_find_ecb(p_rsp->nfcee_id);
+  if (p_cb == nullptr) {
+    LOG(ERROR) << StringPrintf(
+        "nfa_ee_nci_power_ctrl_rsp() Can not find cb for handle:0x%02x",
+        p_rsp->nfcee_id);
+    return;
+  }
+
+  power_ctrl_rsp.nfcee_id = p_rsp->nfcee_id;
+  power_ctrl_rsp.status = p_rsp->status;
+
+  nfa_ee_report_event(p_cb->p_ee_cback, NFA_EE_POWER_CTRL_EVT,
+                      (tNFA_EE_CBACK_DATA*)&power_ctrl_rsp);
+}
+
+/*******************************************************************************
+**
+** Function         nfa_ee_nci_force_routing_rsp
+**
+** Description      Process the result for NFCEE force routing response
+**
+** Returns          void
+**
+*******************************************************************************/
+void nfa_ee_nci_force_routing_rsp(tNFA_EE_MSG* p_data) {
+  // tNFA_EE_ECB* p_cb;
+  tNFC_NFCEE_FORCE_ROUTING_REVT* p_rsp = p_data->force_routing_rsp.p_data;
+  tNFA_EE_FORCE_ROUTING_RSP force_routing_rsp;
+
+  DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+      "nfa_ee_nci_force_routing_rsp() status:%d", p_rsp->status);
+
+  force_routing_rsp.status = p_rsp->status;
+
+  nfa_ee_report_event(nullptr, NFA_EE_FORCE_ROUTING_EVT,
+                      (tNFA_EE_CBACK_DATA*)&force_routing_rsp);
+}
 /*******************************************************************************
 **
 ** Function         nfa_ee_report_update_evt
@@ -2251,8 +2697,8 @@ void nfa_ee_nci_wait_rsp(tNFA_EE_MSG* p_data) {
   tNFA_EE_NCI_WAIT_RSP* p_rsp = &p_data->wait_rsp;
 
   DLOG_IF(INFO, nfc_debug_enabled)
-      << StringPrintf("ee_wait_evt:0x%x wait_rsp:%d", nfa_ee_cb.ee_wait_evt,
-                      nfa_ee_cb.wait_rsp);
+      << StringPrintf("%s - ee_wait_evt:0x%x wait_rsp:%d", __func__,
+                      nfa_ee_cb.ee_wait_evt, nfa_ee_cb.wait_rsp);
   if (nfa_ee_cb.wait_rsp) {
     if (p_rsp->opcode == NCI_MSG_RF_SET_ROUTING) nfa_ee_cb.wait_rsp--;
   }
@@ -2330,7 +2776,8 @@ void nfa_ee_nci_conn(tNFA_EE_MSG* p_data) {
             evt_data.data.len = p_pkt->len;
             evt_data.data.p_buf = (uint8_t*)(p_pkt + 1) + p_pkt->offset;
             event = NFA_EE_DATA_EVT;
-            p_pkt = nullptr; /* so this function does not free this GKI buffer */
+            p_pkt =
+                nullptr; /* so this function does not free this GKI buffer */
           }
         }
         break;
@@ -2378,24 +2825,27 @@ void nfa_ee_nci_disc_req_ntf(tNFA_EE_MSG* p_data) {
   tNFA_EE_ECB* p_cb = nullptr;
   uint8_t report_ntf = 0;
   uint8_t xx;
+  uint8_t listen_cnt = 0;
 
-  DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-      "num_info: %d cur_ee:%d", p_cbk->num_info, nfa_ee_cb.cur_ee);
+  DLOG_IF(INFO, nfc_debug_enabled)
+      << StringPrintf("%s - num_info: %d cur_ee:%d", __func__, p_cbk->num_info,
+                      nfa_ee_cb.cur_ee);
 
   for (xx = 0; xx < p_cbk->num_info; xx++) {
     ee_handle = NFA_HANDLE_GROUP_EE | p_cbk->info[xx].nfcee_id;
 
     p_cb = nfa_ee_find_ecb(p_cbk->info[xx].nfcee_id);
     if (!p_cb) {
-      DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-          "Cannot find cb for NFCEE: 0x%x", p_cbk->info[xx].nfcee_id);
+      DLOG_IF(INFO, nfc_debug_enabled)
+          << StringPrintf("%s - Cannot find cb for NFCEE: 0x%x", __func__,
+                          p_cbk->info[xx].nfcee_id);
       p_cb = nfa_ee_find_ecb(NFA_EE_INVALID);
       if (p_cb) {
         p_cb->nfcee_id = p_cbk->info[xx].nfcee_id;
         p_cb->ecb_flags |= NFA_EE_ECB_FLAGS_ORDER;
       } else {
-        LOG(ERROR) << StringPrintf("Cannot allocate cb for NFCEE: 0x%x",
-                                   p_cbk->info[xx].nfcee_id);
+        LOG(ERROR) << StringPrintf("%s - Cannot allocate cb for NFCEE: 0x%x",
+                                   __func__, p_cbk->info[xx].nfcee_id);
         continue;
       }
     } else {
@@ -2405,27 +2855,68 @@ void nfa_ee_nci_disc_req_ntf(tNFA_EE_MSG* p_data) {
     p_cb->ecb_flags |= NFA_EE_ECB_FLAGS_DISC_REQ;
     if (p_cbk->info[xx].op == NFC_EE_DISC_OP_ADD) {
       if (p_cbk->info[xx].tech_n_mode == NFC_DISCOVERY_TYPE_LISTEN_A) {
-        p_cb->la_protocol = p_cbk->info[xx].protocol;
+        listen_cnt++;
+
+        if (p_cbk->info[xx].protocol == NFA_PROTOCOL_ISO_DEP) {
+          p_cb->la_protocol |= NFA_PROTOCOL_MASK_ISO_DEP;
+        } else if (p_cbk->info[xx].protocol == NFA_PROTOCOL_MIFARE) {
+          p_cb->la_protocol |= NFA_PROTOCOL_MASK_T2T;
+        } else if (p_cbk->info[xx].protocol == NFA_PROTOCOL_NFC_DEP) {
+          p_cb->la_protocol |= NFA_PROTOCOL_MASK_NFC_DEP;
+        }
       } else if (p_cbk->info[xx].tech_n_mode == NFC_DISCOVERY_TYPE_LISTEN_B) {
-        p_cb->lb_protocol = p_cbk->info[xx].protocol;
+        listen_cnt++;
+
+        if (p_cbk->info[xx].protocol == NFA_PROTOCOL_ISO_DEP) {
+          p_cb->lb_protocol |= NFA_PROTOCOL_MASK_ISO_DEP;
+        }
       } else if (p_cbk->info[xx].tech_n_mode == NFC_DISCOVERY_TYPE_LISTEN_F) {
-        p_cb->lf_protocol = p_cbk->info[xx].protocol;
+        listen_cnt++;
+
+        if (p_cbk->info[xx].protocol == NFA_PROTOCOL_T3T) {
+          p_cb->lf_protocol |= NFA_PROTOCOL_MASK_T3T;
+        } else if (p_cbk->info[xx].protocol == NFA_PROTOCOL_NFC_DEP) {
+          p_cb->lf_protocol |= NFA_PROTOCOL_MASK_NFC_DEP;
+        }
       } else if (p_cbk->info[xx].tech_n_mode ==
                  NFC_DISCOVERY_TYPE_LISTEN_B_PRIME) {
         p_cb->lbp_protocol = p_cbk->info[xx].protocol;
       }
-      DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-          "nfcee_id=0x%x ee_status=0x%x ecb_flags=0x%x la_protocol=0x%x "
-          "la_protocol=0x%x la_protocol=0x%x",
-          p_cb->nfcee_id, p_cb->ee_status, p_cb->ecb_flags, p_cb->la_protocol,
-          p_cb->lb_protocol, p_cb->lf_protocol);
+      if (listen_cnt) {
+        DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+            "%s - nfcee_id=0x%x ee_status=0x%x ecb_flags=0x%x la_protocol=0x%x "
+            "lb_protocol=0x%x lf_protocol=0x%x",
+            __func__, p_cb->nfcee_id, p_cb->ee_status, p_cb->ecb_flags,
+            p_cb->la_protocol, p_cb->lb_protocol, p_cb->lf_protocol);
+      } else {
+        DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+            "%s - Only poll information in message, do nothing", __func__);
+      }
     } else {
       if (p_cbk->info[xx].tech_n_mode == NFC_DISCOVERY_TYPE_LISTEN_A) {
-        p_cb->la_protocol = 0;
+        listen_cnt++;
+
+        if (p_cbk->info[xx].protocol == NFA_PROTOCOL_ISO_DEP) {
+          p_cb->la_protocol &= ~NFA_PROTOCOL_MASK_ISO_DEP;
+        } else if (p_cbk->info[xx].protocol == NFA_PROTOCOL_MIFARE) {
+          p_cb->la_protocol &= ~NFA_PROTOCOL_MASK_T2T;
+        } else if (p_cbk->info[xx].protocol == NFA_PROTOCOL_NFC_DEP) {
+          p_cb->la_protocol &= ~NFA_PROTOCOL_MASK_NFC_DEP;
+        }
       } else if (p_cbk->info[xx].tech_n_mode == NFC_DISCOVERY_TYPE_LISTEN_B) {
-        p_cb->lb_protocol = 0;
+        listen_cnt++;
+
+        if (p_cbk->info[xx].protocol == NFA_PROTOCOL_ISO_DEP) {
+          p_cb->lb_protocol &= ~NFA_PROTOCOL_MASK_ISO_DEP;
+        }
       } else if (p_cbk->info[xx].tech_n_mode == NFC_DISCOVERY_TYPE_LISTEN_F) {
-        p_cb->lf_protocol = 0;
+        listen_cnt++;
+
+        if (p_cbk->info[xx].protocol == NFA_PROTOCOL_T3T) {
+          p_cb->lf_protocol &= ~NFA_PROTOCOL_MASK_T3T;
+        } else if (p_cbk->info[xx].protocol == NFA_PROTOCOL_NFC_DEP) {
+          p_cb->lf_protocol &= ~NFA_PROTOCOL_MASK_NFC_DEP;
+        }
       } else if (p_cbk->info[xx].tech_n_mode ==
                  NFC_DISCOVERY_TYPE_LISTEN_B_PRIME) {
         p_cb->lbp_protocol = 0;
@@ -2434,7 +2925,7 @@ void nfa_ee_nci_disc_req_ntf(tNFA_EE_MSG* p_data) {
   }
 
   /* Report NFA_EE_DISCOVER_REQ_EVT for all active NFCEE */
-  if (report_ntf) nfa_ee_report_discover_req_evt();
+  if (report_ntf && listen_cnt) nfa_ee_report_discover_req_evt();
 }
 
 /*******************************************************************************
@@ -2486,7 +2977,8 @@ void nfa_ee_get_tech_route(uint8_t power_state, uint8_t* p_handles) {
       NFA_TECHNOLOGY_MASK_A, NFA_TECHNOLOGY_MASK_B, NFA_TECHNOLOGY_MASK_F,
       NFA_TECHNOLOGY_MASK_B_PRIME};
 
-  DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf("%d", power_state);
+  DLOG_IF(INFO, nfc_debug_enabled)
+      << StringPrintf("%s - %d", __func__, power_state);
 
   for (xx = 0; xx < NFA_EE_MAX_TECH_ROUTE; xx++) {
     p_handles[xx] = NFC_DH_ID;
@@ -2511,8 +3003,8 @@ void nfa_ee_get_tech_route(uint8_t power_state, uint8_t* p_handles) {
     }
   }
   DLOG_IF(INFO, nfc_debug_enabled)
-      << StringPrintf("0x%x, 0x%x, 0x%x, 0x%x", p_handles[0], p_handles[1],
-                      p_handles[2], p_handles[3]);
+      << StringPrintf("%s - 0x%x, 0x%x, 0x%x, 0x%x", __func__, p_handles[0],
+                      p_handles[1], p_handles[2], p_handles[3]);
 }
 
 /*******************************************************************************
@@ -2562,15 +3054,19 @@ void nfa_ee_route_add_one_ecb_by_route_order(tNFA_EE_ECB* p_cb, int rout_type,
                                              uint8_t* ps, int* p_cur_offset) {
   /* use the first byte of the buffer (ps) to keep the num_tlv */
   uint8_t num_tlv = *ps;
-  DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-      "%s - max_len:%d, cur_offset:%d, more:%d, num_tlv:%d,rout_type:- %d",
-      __func__, *p_max_len, *p_cur_offset, more, num_tlv, rout_type);
+  //  DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+  //      "%s - max_len:%d, cur_offset:%d, more:%d, num_tlv:%d,rout_type:- %d",
+  //      __func__, *p_max_len, *p_cur_offset, more, num_tlv, rout_type);
+
   uint8_t* pp = ps + 1 + *p_cur_offset;
   uint8_t* p = pp;
   uint16_t tlv_size = (uint8_t)*p_cur_offset;
 
   switch (rout_type) {
     case NCI_ROUTE_ORDER_TECHNOLOGY: {
+      DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+          "%s - rout_type: NCI_ROUTE_ORDER_TECHNOLOGY", __func__);
+
       nfa_ee_check_set_routing(p_cb->size_mask_tech, p_max_len, ps,
                                p_cur_offset);
       pp = ps + 1 + *p_cur_offset;
@@ -2579,6 +3075,8 @@ void nfa_ee_route_add_one_ecb_by_route_order(tNFA_EE_ECB* p_cb, int rout_type,
     } break;
 
     case NCI_ROUTE_ORDER_PROTOCOL: {
+      DLOG_IF(INFO, nfc_debug_enabled)
+          << StringPrintf("%s - rout_type: NCI_ROUTE_ORDER_PROTOCOL", __func__);
       nfa_ee_check_set_routing(p_cb->size_mask_proto, p_max_len, ps,
                                p_cur_offset);
       pp = ps + 1 + *p_cur_offset;
@@ -2586,9 +3084,13 @@ void nfa_ee_route_add_one_ecb_by_route_order(tNFA_EE_ECB* p_cb, int rout_type,
       nfa_ee_add_proto_route_to_ecb(p_cb, pp, p, ps, p_cur_offset);
     } break;
     case NCI_ROUTE_ORDER_AID: {
+      DLOG_IF(INFO, nfc_debug_enabled)
+          << StringPrintf("%s - rout_type: NCI_ROUTE_ORDER_AID", __func__);
       nfa_ee_add_aid_route_to_ecb(p_cb, pp, p, ps, p_cur_offset, p_max_len);
     } break;
     case NCI_ROUTE_ORDER_SYS_CODE: {
+      DLOG_IF(INFO, nfc_debug_enabled)
+          << StringPrintf("%s - rout_type: NCI_ROUTE_ORDER_SYS_CODE", __func__);
       nfa_ee_add_sys_code_route_to_ecb(p_cb, pp, p, ps, p_cur_offset,
                                        p_max_len);
     } break;
@@ -2608,8 +3110,9 @@ void nfa_ee_route_add_one_ecb_by_route_order(tNFA_EE_ECB* p_cb, int rout_type,
   if (p_cb->ecb_flags & NFA_EE_ECB_FLAGS_ROUTING) {
     nfa_ee_cb.ee_cfg_sts |= NFA_EE_STS_CHANGED_ROUTING;
   }
-  DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-      "ee_cfg_sts:0x%02x lmrt_size:%d", nfa_ee_cb.ee_cfg_sts, tlv_size);
+  DLOG_IF(INFO, nfc_debug_enabled)
+      << StringPrintf("%s - ee_cfg_sts:0x%02x lmrt_size:%d", __func__,
+                      nfa_ee_cb.ee_cfg_sts, tlv_size);
 
   if (more == false) {
     /* last entry. update routing table now */
@@ -2676,8 +3179,8 @@ static bool nfa_ee_need_recfg(void) {
   uint8_t mask;
 
   DLOG_IF(INFO, nfc_debug_enabled)
-      << StringPrintf("ee_cfged: 0x%02x ee_cfg_sts: 0x%02x", nfa_ee_cb.ee_cfged,
-                      nfa_ee_cb.ee_cfg_sts);
+      << StringPrintf("%s - ee_cfged: 0x%02x ee_cfg_sts: 0x%02x", __func__,
+                      nfa_ee_cb.ee_cfged, nfa_ee_cb.ee_cfg_sts);
   /* if no routing/vs is configured, do not need to send the info to NFCC */
   if (nfa_ee_cb.ee_cfged || nfa_ee_cb.ee_cfg_sts) {
     if (nfa_ee_cb.ee_cfg_sts & NFA_EE_STS_CHANGED) {
@@ -2686,8 +3189,9 @@ static bool nfa_ee_need_recfg(void) {
       p_cb = &nfa_ee_cb.ecb[NFA_EE_CB_4_DH];
       mask = 1 << NFA_EE_CB_4_DH;
       for (xx = 0; xx <= nfa_ee_cb.cur_ee; xx++) {
-        DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-            "%d: ecb_flags  : 0x%02x, mask: 0x%02x", xx, p_cb->ecb_flags, mask);
+        DLOG_IF(INFO, nfc_debug_enabled)
+            << StringPrintf("%s - %d: ecb_flags  : 0x%02x, mask: 0x%02x",
+                            __func__, xx, p_cb->ecb_flags, mask);
         if ((p_cb->ecb_flags) && (nfa_ee_cb.ee_cfged & mask)) {
           needed = true;
           break;
@@ -2775,7 +3279,8 @@ void nfa_ee_lmrt_to_nfcc(__attribute__((unused)) tNFA_EE_MSG* p_data) {
                                                        : NFA_EE_ROUT_BUF_SIZE;
   p = (uint8_t*)GKI_getbuf(max_len);
   if (p == nullptr) {
-    LOG(ERROR) << StringPrintf("no buffer to send routing info.");
+    LOG(ERROR) << StringPrintf("%s - no buffer to send routing info.",
+                               __func__);
     tNFA_EE_CBACK_DATA nfa_ee_cback_data;
     nfa_ee_cback_data.status = status;
     nfa_ee_report_event(nullptr, NFA_EE_NO_MEM_ERR_EVT, &nfa_ee_cback_data);
@@ -2790,13 +3295,12 @@ void nfa_ee_lmrt_to_nfcc(__attribute__((unused)) tNFA_EE_MSG* p_data) {
       if (last_active == NFA_EE_INVALID) {
         last_active = p_cb->nfcee_id;
         DLOG_IF(INFO, nfc_debug_enabled)
-            << StringPrintf("last_active: 0x%x", last_active);
+            << StringPrintf("%s - last_active: 0x%x", __func__, last_active);
       }
     }
   }
-  if (last_active == NFA_EE_INVALID) {
-    check = false;
-  }
+
+  // We want to check all NFCEE
 
   max_tlv =
       (uint8_t)((max_len > NFA_EE_ROUT_MAX_TLV_SIZE) ? NFA_EE_ROUT_MAX_TLV_SIZE
@@ -2810,16 +3314,18 @@ void nfa_ee_lmrt_to_nfcc(__attribute__((unused)) tNFA_EE_MSG* p_data) {
 
     for (xx = 0; (xx < nfa_ee_cb.cur_ee) && check; xx++, p_cb++) {
       if (p_cb->ee_status == NFC_NFCEE_STATUS_ACTIVE) {
-        DLOG_IF(INFO, nfc_debug_enabled)
-            << StringPrintf("%s --add the routing for NFCEEs!!", __func__);
+        DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+            "%s -------------------- add the routing for NFCEE Id 0x%02X",
+            __func__, p_cb->nfcee_id);
         nfa_ee_route_add_one_ecb_by_route_order(p_cb, rt, &max_len, more, p,
                                                 &cur_offset);
       }
     }
+
     if (rt == NCI_ROUTE_ORDER_TECHNOLOGY) more = false;
     /* add the routing entries for DH */
-    DLOG_IF(INFO, nfc_debug_enabled)
-        << StringPrintf("%s --add the routing for DH!!", __func__);
+    DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+        "%s -------------------- add the routing for DH", __func__);
     nfa_ee_route_add_one_ecb_by_route_order(&nfa_ee_cb.ecb[NFA_EE_CB_4_DH], rt,
                                             &max_len, more, p, &cur_offset);
   }

@@ -53,6 +53,7 @@ typedef struct {
 
   bool graceful_disable; /* TRUE if NFA_Disable () is called with TRUE */
   bool timers_disabled;  /* TRUE if sys timers disabled */
+  uint8_t dta_enabled;
 } tNFA_SYS_CB;
 
 /*****************************************************************************

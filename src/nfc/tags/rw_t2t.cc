@@ -75,9 +75,9 @@ static void rw_t2t_proc_data(uint8_t conn_id, tNFC_DATA_CEVT* p_data) {
   uint8_t begin_state = p_t2t->state;
 
   if ((p_t2t->state == RW_T2T_STATE_IDLE) || (p_cmd_rsp_info == nullptr)) {
-    DLOG_IF(INFO, nfc_debug_enabled)
-        << StringPrintf("RW T2T Raw Frame: Len [0x%X] Status [%s]", p_pkt->len,
-                        NFC_GetStatusName(p_data->status).c_str());
+    DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+        "%s - RW T2T Raw Frame: Len [0x%X] Status [%s]", __func__, p_pkt->len,
+        NFC_GetStatusName(p_data->status).c_str());
     evt_data.status = p_data->status;
     evt_data.p_data = p_pkt;
     tRW_DATA rw_data;
@@ -93,14 +93,14 @@ static void rw_t2t_proc_data(uint8_t conn_id, tNFC_DATA_CEVT* p_data) {
   nfc_stop_quick_timer(&p_t2t->t2_timer);
 
   DLOG_IF(INFO, nfc_debug_enabled)
-      << StringPrintf("RW RECV [%s]:0x%x RSP", t2t_info_to_str(p_cmd_rsp_info),
-                      p_cmd_rsp_info->opcode);
+      << StringPrintf("%s - RW RECV [%s]:0x%x RSP", __func__,
+                      t2t_info_to_str(p_cmd_rsp_info), p_cmd_rsp_info->opcode);
 
   if (((p_pkt->len != p_cmd_rsp_info->rsp_len) &&
        (p_pkt->len != p_cmd_rsp_info->nack_rsp_len) &&
        (p_t2t->substate != RW_T2T_SUBSTATE_WAIT_SELECT_SECTOR)) ||
       (p_t2t->state == RW_T2T_STATE_HALT)) {
-    LOG(ERROR) << StringPrintf("T2T Frame error. state=%s ",
+    LOG(ERROR) << StringPrintf("%s - T2T Frame error. state=%s ", __func__,
                                rw_t2t_get_state_name(p_t2t->state).c_str());
     if (p_t2t->state != RW_T2T_STATE_HALT) {
       /* Retrasmit the last sent command if retry-count < max retry */
@@ -222,7 +222,7 @@ static void rw_t2t_proc_data(uint8_t conn_id, tNFC_DATA_CEVT* p_data) {
 
   if (begin_state != p_t2t->state) {
     DLOG_IF(INFO, nfc_debug_enabled)
-        << StringPrintf("RW T2T state changed:<%s> -> <%s>",
+        << StringPrintf("%s - RW T2T state changed:<%s> -> <%s>", __func__,
                         rw_t2t_get_state_name(begin_state).c_str(),
                         rw_t2t_get_state_name(p_t2t->state).c_str());
   }
@@ -322,7 +322,7 @@ void rw_t2t_conn_cback(uint8_t conn_id, tNFC_CONN_EVT event,
           rw_t2t_handle_presence_check_rsp(NFC_STATUS_REJECTED);
         } else {
           /* Move back to idle state */
-          rw_t2t_handle_presence_check_rsp(NFC_STATUS_FAILED);
+          rw_t2t_handle_presence_check_rsp(NFC_STATUS_RF_FRAME_CORRUPTED);
         }
       } else {
         rw_t2t_process_error();
@@ -379,8 +379,8 @@ tNFC_STATUS rw_t2t_send_cmd(uint8_t opcode, uint8_t* p_dat) {
       rw_main_update_tx_stats(p_data->len, false);
 #endif
       DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-          "RW SENT [%s]:0x%x CMD", t2t_info_to_str(p_cmd_rsp_info),
-          p_cmd_rsp_info->opcode);
+          "%s - RW SENT [%s]:0x%x CMD", __func__,
+          t2t_info_to_str(p_cmd_rsp_info), p_cmd_rsp_info->opcode);
 
       status = NFC_SendData(NFC_RF_CONN_ID, p_data);
       if (status == NFC_STATUS_OK) {
@@ -389,7 +389,7 @@ tNFC_STATUS rw_t2t_send_cmd(uint8_t opcode, uint8_t* p_dat) {
             (RW_T2T_TOUT_RESP * QUICK_TIMER_TICKS_PER_SEC) / 1000);
       } else {
         LOG(ERROR) << StringPrintf(
-            "T2T NFC Send data failed. state=%s substate=%s ",
+            "%s - T2T NFC Send data failed. state=%s substate=%s ", __func__,
             rw_t2t_get_state_name(p_t2t->state).c_str(),
             rw_t2t_get_substate_name(p_t2t->substate).c_str());
       }
@@ -419,7 +419,7 @@ void rw_t2t_process_timeout() {
       rw_t2t_handle_presence_check_rsp(NFC_STATUS_REJECTED);
     } else {
       /* Move back to idle state */
-      rw_t2t_handle_presence_check_rsp(NFC_STATUS_FAILED);
+      rw_t2t_handle_presence_check_rsp(NFC_STATUS_RF_FRAME_CORRUPTED);
     }
     return;
   }
@@ -440,7 +440,7 @@ void rw_t2t_process_timeout() {
       rw_t2t_resume_op();
     }
   } else if (p_t2t->state != RW_T2T_STATE_IDLE) {
-    LOG(ERROR) << StringPrintf("T2T timeout. state=%s ",
+    LOG(ERROR) << StringPrintf("%s - T2T timeout. state=%s ", __func__,
                                rw_t2t_get_state_name(p_t2t->state).c_str());
     /* Handle timeout error as no response to the command sent */
     rw_t2t_process_error();
@@ -492,15 +492,16 @@ static void rw_t2t_process_error(void) {
     /* retry sending the command */
     rw_cb.cur_retry++;
 
-    DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-        "T2T retransmission attempt %i of %i", rw_cb.cur_retry, RW_MAX_RETRIES);
+    DLOG_IF(INFO, nfc_debug_enabled)
+        << StringPrintf("%s - T2T retransmission attempt %i of %i", __func__,
+                        rw_cb.cur_retry, RW_MAX_RETRIES);
 
     /* allocate a new buffer for message */
     p_cmd_buf = (NFC_HDR*)GKI_getpoolbuf(NFC_RW_POOL_ID);
     if (p_cmd_buf != nullptr) {
-      memcpy(p_cmd_buf, p_t2t->p_cur_cmd_buf, sizeof(NFC_HDR) +
-                                                  p_t2t->p_cur_cmd_buf->offset +
-                                                  p_t2t->p_cur_cmd_buf->len);
+      memcpy(p_cmd_buf, p_t2t->p_cur_cmd_buf,
+             sizeof(NFC_HDR) + p_t2t->p_cur_cmd_buf->offset +
+                 p_t2t->p_cur_cmd_buf->len);
 #if (RW_STATS_INCLUDED == TRUE)
       /* Update stats */
       rw_main_update_tx_stats(p_cmd_buf->len, true);
@@ -517,10 +518,11 @@ static void rw_t2t_process_error(void) {
   } else {
     if (p_t2t->check_tag_halt) {
       DLOG_IF(INFO, nfc_debug_enabled)
-          << StringPrintf("T2T Went to HALT State!");
+          << StringPrintf("%s - T2T Went to HALT State!", __func__);
     } else {
       DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-          "T2T maximum retransmission attempts reached (%i)", RW_MAX_RETRIES);
+          "%s - T2T maximum retransmission attempts reached (%i)", __func__,
+          RW_MAX_RETRIES);
     }
   }
   rw_event = rw_t2t_info_to_event(p_cmd_rsp_info);
@@ -609,9 +611,9 @@ static void rw_t2t_resume_op(void) {
   /* allocate a new buffer for message */
   p_cmd_buf = (NFC_HDR*)GKI_getpoolbuf(NFC_RW_POOL_ID);
   if (p_cmd_buf != nullptr) {
-    memcpy(p_cmd_buf, p_t2t->p_sec_cmd_buf, sizeof(NFC_HDR) +
-                                                p_t2t->p_sec_cmd_buf->offset +
-                                                p_t2t->p_sec_cmd_buf->len);
+    memcpy(p_cmd_buf, p_t2t->p_sec_cmd_buf,
+           sizeof(NFC_HDR) + p_t2t->p_sec_cmd_buf->offset +
+               p_t2t->p_sec_cmd_buf->len);
     memcpy(p_t2t->p_cur_cmd_buf, p_t2t->p_sec_cmd_buf,
            sizeof(NFC_HDR) + p_t2t->p_sec_cmd_buf->offset +
                p_t2t->p_sec_cmd_buf->len);
@@ -858,6 +860,9 @@ tNFC_STATUS rw_t2t_select(void) {
 void rw_t2t_handle_op_complete(void) {
   tRW_T2T_CB* p_t2t = &rw_cb.tcb.t2t;
 
+  DLOG_IF(INFO, nfc_debug_enabled)
+      << StringPrintf("%s - p_t2t->state: %d", __func__, p_t2t->state);
+
   if ((p_t2t->state == RW_T2T_STATE_READ_NDEF) ||
       (p_t2t->state == RW_T2T_STATE_WRITE_NDEF)) {
     p_t2t->b_read_data = false;
@@ -933,7 +938,8 @@ tNFC_STATUS RW_T2tRead(uint16_t block) {
 
   if (p_t2t->state != RW_T2T_STATE_IDLE) {
     LOG(ERROR) << StringPrintf(
-        "Error: Type 2 tag not activated or Busy - State: %u", p_t2t->state);
+        "%s - Error: Type 2 tag not activated or Busy - State: %u", __func__,
+        p_t2t->state);
     return (NFC_STATUS_FAILED);
   }
 
@@ -966,7 +972,8 @@ tNFC_STATUS RW_T2tWrite(uint16_t block, uint8_t* p_write_data) {
 
   if (p_t2t->state != RW_T2T_STATE_IDLE) {
     LOG(ERROR) << StringPrintf(
-        "Error: Type 2 tag not activated or Busy - State: %u", p_t2t->state);
+        "%s - Error: Type 2 tag not activated or Busy - State: %u", __func__,
+        p_t2t->state);
     return (NFC_STATUS_FAILED);
   }
 
@@ -1009,7 +1016,8 @@ tNFC_STATUS RW_T2tSectorSelect(uint8_t sector) {
 
   if (p_t2t->state != RW_T2T_STATE_IDLE) {
     LOG(ERROR) << StringPrintf(
-        "Error: Type 2 tag not activated or Busy - State: %u", p_t2t->state);
+        "%s - Error: Type 2 tag not activated or Busy - State: %u", __func__,
+        p_t2t->state);
     return (NFC_STATUS_FAILED);
   }
 

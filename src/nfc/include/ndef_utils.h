@@ -50,7 +50,7 @@
 #define NDEF_TNF_RESERVED 7  /* Reserved */
 
 /* Define the status code returned from the Validate, Parse or Build functions
-*/
+ */
 enum {
   NDEF_OK, /* 0 - OK                                   */
 
@@ -69,7 +69,7 @@ enum {
 typedef uint8_t tNDEF_STATUS;
 
 /* Functions to parse a received NDEF Message
-*/
+ */
 /*******************************************************************************
 **
 ** Function         NDEF_MsgValidate
@@ -234,7 +234,7 @@ extern uint8_t* NDEF_RecGetId(uint8_t* p_rec, uint8_t* p_id_len);
 extern uint8_t* NDEF_RecGetPayload(uint8_t* p_rec, uint32_t* p_payload_len);
 
 /* Functions to build an NDEF Message
-*/
+ */
 /*******************************************************************************
 **
 ** Function         NDEF_MsgInit

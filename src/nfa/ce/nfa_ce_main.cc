@@ -137,7 +137,7 @@ static void nfa_ce_proc_nfcc_power_mode(uint8_t nfcc_power_mode) {
   uint8_t listen_info_idx;
 
   DLOG_IF(INFO, nfc_debug_enabled)
-      << StringPrintf("nfcc_power_mode=%d", nfcc_power_mode);
+      << StringPrintf("%s - nfcc_power_mode=%d", __func__, nfcc_power_mode);
 
   /* if NFCC power mode is change to full power */
   if (nfcc_power_mode == NFA_DM_PWR_MODE_FULL) {

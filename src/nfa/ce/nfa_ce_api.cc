@@ -203,7 +203,7 @@ tNFA_STATUS NFA_CeConfigureUiccListenTech(tNFA_HANDLE ee_handle,
   tNFA_CE_MSG* p_msg;
 
   DLOG_IF(INFO, nfc_debug_enabled)
-      << StringPrintf("ee_handle = 0x%x", ee_handle);
+      << StringPrintf("%s - ee_handle = 0x%x", __func__, ee_handle);
 
   /* If tech_mask is zero, then app is disabling listening for specified uicc */
   if (tech_mask == 0) {
@@ -226,8 +226,9 @@ tNFA_STATUS NFA_CeConfigureUiccListenTech(tNFA_HANDLE ee_handle,
   }
 #else
   LOG(ERROR) << StringPrintf(
-      "NFCEE related functions are not "
-      "enabled!");
+      "%s - NFCEE related functions are not "
+      "enabled!",
+      __func__);
 #endif
   return (NFA_STATUS_FAILED);
 }
@@ -301,7 +302,8 @@ tNFA_STATUS NFA_CeRegisterFelicaSystemCodeOnDH(uint16_t system_code,
 **
 *******************************************************************************/
 tNFA_STATUS NFA_CeDeregisterFelicaSystemCodeOnDH(tNFA_HANDLE handle) {
-  DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf("handle:0x%X", handle);
+  DLOG_IF(INFO, nfc_debug_enabled)
+      << StringPrintf("%s - handle:0x%X", __func__, handle);
   return (nfa_ce_api_deregister_listen(handle, NFA_CE_LISTEN_INFO_FELICA));
 }
 
@@ -374,7 +376,8 @@ tNFA_STATUS NFA_CeRegisterAidOnDH(uint8_t aid[NFC_MAX_AID_LEN], uint8_t aid_len,
 **
 *******************************************************************************/
 tNFA_STATUS NFA_CeDeregisterAidOnDH(tNFA_HANDLE handle) {
-  DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf("handle:0x%X", handle);
+  DLOG_IF(INFO, nfc_debug_enabled)
+      << StringPrintf("%s - handle:0x%X", __func__, handle);
   return (nfa_ce_api_deregister_listen(handle, NFA_CE_LISTEN_INFO_T4T_AID));
 }
 
@@ -409,7 +412,8 @@ tNFA_STATUS NFA_CeSetIsoDepListenTech(tNFA_TECHNOLOGY_MASK tech_mask) {
   tNFA_TECHNOLOGY_MASK use_mask =
       (NFA_TECHNOLOGY_MASK_A | NFA_TECHNOLOGY_MASK_B);
 
-  DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf("0x%x", tech_mask);
+  DLOG_IF(INFO, nfc_debug_enabled)
+      << StringPrintf("%s - 0x%x", __func__, tech_mask);
   if (((tech_mask & use_mask) == 0) || ((tech_mask & ~use_mask) != 0)) {
     LOG(ERROR) << StringPrintf(
         "NFA_CeSetIsoDepListenTech: Invalid technology mask");

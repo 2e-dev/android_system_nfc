@@ -35,10 +35,10 @@ using android::base::StringPrintf;
 extern bool nfc_debug_enabled;
 
 /*******************************************************************************
-* URI Well-known-type prefixes
-*******************************************************************************/
+ * URI Well-known-type prefixes
+ *******************************************************************************/
 const uint8_t* nfa_dm_ndef_wkt_uri_str_tbl[] = {
-    nullptr,                                         /* 0x00 */
+    nullptr,                                      /* 0x00 */
     (const uint8_t*)"http://www.",                /* 0x01 */
     (const uint8_t*)"https://www.",               /* 0x02 */
     (const uint8_t*)"http://",                    /* 0x03 */
@@ -141,14 +141,15 @@ bool nfa_dm_ndef_reg_hdlr(tNFA_DM_MSG* p_data) {
   if (p_reg_info->tnf == NFA_TNF_DEFAULT) {
     /* check if default handler is already registered */
     if (p_cb->p_ndef_handler[NFA_NDEF_DEFAULT_HANDLER_IDX]) {
-      LOG(WARNING) << StringPrintf("Default NDEF handler being changed.");
+      LOG(WARNING) << StringPrintf("%s - Default NDEF handler being changed.",
+                                   __func__);
 
       /* Free old registration info */
       nfa_dm_ndef_dereg_hdlr_by_handle(
           (tNFA_HANDLE)NFA_NDEF_DEFAULT_HANDLER_IDX);
     }
-    DLOG_IF(INFO, nfc_debug_enabled)
-        << StringPrintf("Default NDEF handler successfully registered.");
+    DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+        "%s - Default NDEF handler successfully registered.", __func__);
     hdlr_idx = NFA_NDEF_DEFAULT_HANDLER_IDX;
   }
   /* Get available entry in ndef_handler table, and check if requested type is
@@ -177,9 +178,9 @@ bool nfa_dm_ndef_reg_hdlr(tNFA_DM_MSG* p_data) {
     ndef_register.ndef_type_handle = p_reg_info->ndef_type_handle;
     ndef_register.status = NFA_STATUS_OK;
 
-    DLOG_IF(INFO, nfc_debug_enabled)
-        << StringPrintf("NDEF handler successfully registered. Handle=0x%08x",
-                        p_reg_info->ndef_type_handle);
+    DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+        "%s - NDEF handler successfully registered. Handle=0x%08x", __func__,
+        p_reg_info->ndef_type_handle);
     tNFA_NDEF_EVT_DATA nfa_ndef_evt_data;
     nfa_ndef_evt_data.ndef_reg = ndef_register;
     (*(p_reg_info->p_ndef_cback))(NFA_NDEF_REGISTER_EVT, &nfa_ndef_evt_data);
@@ -189,7 +190,8 @@ bool nfa_dm_ndef_reg_hdlr(tNFA_DM_MSG* p_data) {
     return false;
   } else {
     /* Error */
-    LOG(ERROR) << StringPrintf("NDEF handler failed to register.");
+    LOG(ERROR) << StringPrintf("%s - NDEF handler failed to register.",
+                               __func__);
     ndef_register.ndef_type_handle = NFA_HANDLE_INVALID;
     ndef_register.status = NFA_STATUS_FAILED;
     tNFA_NDEF_EVT_DATA nfa_ndef_evt_data;
@@ -218,8 +220,9 @@ bool nfa_dm_ndef_dereg_hdlr(tNFA_DM_MSG* p_data) {
        NFA_HANDLE_GROUP_NDEF_HANDLER) ||
       ((p_dereginfo->ndef_type_handle & NFA_HANDLE_MASK) >=
        NFA_NDEF_MAX_HANDLERS)) {
-    LOG(ERROR) << StringPrintf("Invalid handle for NDEF type handler: 0x%08x",
-                               p_dereginfo->ndef_type_handle);
+    LOG(ERROR) << StringPrintf(
+        "%s - Invalid handle for NDEF type handler: 0x%08x", __func__,
+        p_dereginfo->ndef_type_handle);
   } else {
     nfa_dm_ndef_dereg_hdlr_by_handle(p_dereginfo->ndef_type_handle);
   }
@@ -406,7 +409,8 @@ void nfa_dm_ndef_handle_message(tNFA_STATUS status, uint8_t* p_msg_buf,
     p_handler = p_cb->p_ndef_handler[NFA_NDEF_DEFAULT_HANDLER_IDX];
     if (p_handler != nullptr) {
       DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-          "Notifying default handler of zero-length NDEF message...");
+          "%s - Notifying default handler of zero-length NDEF message...",
+          __func__);
       ndef_data.ndef_type_handle = p_handler->ndef_type_handle;
       ndef_data.p_data = nullptr; /* Start of record */
       ndef_data.len = 0;
@@ -421,7 +425,8 @@ void nfa_dm_ndef_handle_message(tNFA_STATUS status, uint8_t* p_msg_buf,
   ndef_status = NDEF_MsgValidate(p_msg_buf, len, true);
   if (ndef_status != NDEF_OK) {
     LOG(ERROR) << StringPrintf(
-        "Received invalid NDEF message. NDEF status=0x%x", ndef_status);
+        "%s - Received invalid NDEF message. NDEF status=0x%x", __func__,
+        ndef_status);
     return;
   }
 
@@ -456,8 +461,8 @@ void nfa_dm_ndef_handle_message(tNFA_STATUS status, uint8_t* p_msg_buf,
       /* Not a registered NDEF type. Use default handler */
       p_handler = p_cb->p_ndef_handler[NFA_NDEF_DEFAULT_HANDLER_IDX];
       if (p_handler != nullptr) {
-        DLOG_IF(INFO, nfc_debug_enabled)
-            << StringPrintf("No handler found. Using default handler...");
+        DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+            "%s - No handler found. Using default handler...", __func__);
       }
     }
 
@@ -472,8 +477,9 @@ void nfa_dm_ndef_handle_message(tNFA_STATUS status, uint8_t* p_msg_buf,
       }
 
       /* Get pointer to record payload */
-      DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-          "Calling ndef type handler (%x)", p_handler->ndef_type_handle);
+      DLOG_IF(INFO, nfc_debug_enabled)
+          << StringPrintf("%s - Calling ndef type handler (%x)", __func__,
+                          p_handler->ndef_type_handle);
 
       ndef_data.ndef_type_handle = p_handler->ndef_type_handle;
       ndef_data.p_data = p_rec; /* Start of record */
@@ -540,7 +546,8 @@ void nfa_dm_ndef_handle_message(tNFA_STATUS status, uint8_t* p_msg_buf,
      * if no default handler was register) */
     if ((!record_handled) && (!entire_message_handled)) {
       /* Unregistered NDEF record type; no default handler */
-      LOG(WARNING) << StringPrintf("Unhandled NDEF record (#%i)", rec_count);
+      LOG(WARNING) << StringPrintf("%s - Unhandled NDEF record (#%i)", __func__,
+                                   rec_count);
     }
 
     rec_count++;

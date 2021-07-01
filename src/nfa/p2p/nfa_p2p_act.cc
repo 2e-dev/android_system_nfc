@@ -67,7 +67,7 @@ static uint8_t nfa_p2p_allocate_conn_cb(uint8_t local_sap) {
     }
   }
 
-  LOG(ERROR) << StringPrintf("No resource");
+  LOG(ERROR) << StringPrintf("%s - No resource", __func__);
 
   return LLCP_MAX_DATA_LINK;
 }
@@ -86,7 +86,7 @@ static void nfa_p2p_deallocate_conn_cb(uint8_t xx) {
   if (xx < LLCP_MAX_DATA_LINK) {
     nfa_p2p_cb.conn_cb[xx].flags = 0;
   } else {
-    LOG(ERROR) << StringPrintf("Invalid index (%d)", xx);
+    LOG(ERROR) << StringPrintf("%s - Invalid index (%d)", __func__, xx);
   }
 }
 
@@ -126,8 +126,8 @@ static uint8_t nfa_p2p_find_conn_cb(uint8_t local_sap, uint8_t remote_sap) {
 *******************************************************************************/
 static void nfa_p2p_llcp_cback(tLLCP_SAP_CBACK_DATA* p_data) {
   DLOG_IF(INFO, nfc_debug_enabled)
-      << StringPrintf("event:0x%02X, local_sap:0x%02X", p_data->hdr.event,
-                      p_data->hdr.local_sap);
+      << StringPrintf("%s - event:0x%02X, local_sap:0x%02X", __func__,
+                      p_data->hdr.event, p_data->hdr.local_sap);
 
   switch (p_data->hdr.event) {
     case LLCP_SAP_EVT_DATA_IND:
@@ -158,8 +158,13 @@ static void nfa_p2p_llcp_cback(tLLCP_SAP_CBACK_DATA* p_data) {
       nfa_p2p_proc_llcp_link_status(p_data);
       break;
 
+    case LLCP_SAP_EVT_TX_COMPLETE:
+      nfa_p2p_proc_llcp_tx_complete(p_data);
+      break;
+
     default:
-      LOG(ERROR) << StringPrintf("Unknown event:0x%02X", p_data->hdr.event);
+      LOG(ERROR) << StringPrintf("%s - Unknown event:0x%02X", __func__,
+                                 p_data->hdr.event);
       return;
   }
 }
@@ -179,8 +184,8 @@ void nfa_p2p_sdp_cback(uint8_t tid, uint8_t remote_sap) {
   uint8_t xx;
   tNFA_P2P_EVT_DATA evt_data;
 
-  DLOG_IF(INFO, nfc_debug_enabled)
-      << StringPrintf("tid:0x%02X, remote_sap:0x%02X", tid, remote_sap);
+  DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+      "%s - tid:0x%02X, remote_sap:0x%02X", __func__, tid, remote_sap);
 
   /* search for callback function to process */
   for (xx = 0; xx < LLCP_MAX_SDP_TRANSAC; xx++) {
@@ -211,7 +216,8 @@ void nfa_p2p_sdp_cback(uint8_t tid, uint8_t remote_sap) {
 bool nfa_p2p_start_sdp(char* p_service_name, uint8_t local_sap) {
   int xx;
 
-  DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf("SN:<%s>", p_service_name);
+  DLOG_IF(INFO, nfc_debug_enabled)
+      << StringPrintf("%s - SN:<%s>", __func__, p_service_name);
 
   /* search for empty slot */
   for (xx = 0; xx < LLCP_MAX_SDP_TRANSAC; xx++) {
@@ -286,8 +292,8 @@ void nfa_p2p_proc_llcp_connect_ind(tLLCP_SAP_CBACK_DATA* p_data) {
   tNFA_P2P_EVT_DATA evt_data;
   uint8_t xx;
 
-  DLOG_IF(INFO, nfc_debug_enabled)
-      << StringPrintf("server_sap:0x%x", p_data->connect_ind.server_sap);
+  DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+      "%s - server_sap:0x%x", __func__, p_data->connect_ind.server_sap);
 
   server_sap = p_data->connect_ind.server_sap;
   local_sap = p_data->connect_ind.local_sap;
@@ -313,7 +319,7 @@ void nfa_p2p_proc_llcp_connect_ind(tLLCP_SAP_CBACK_DATA* p_data) {
       nfa_p2p_cb.sap_cb[server_sap].p_cback(NFA_P2P_CONN_REQ_EVT, &evt_data);
     }
   } else {
-    LOG(ERROR) << StringPrintf("Not registered");
+    LOG(ERROR) << StringPrintf("%s - Not registered", __func__);
   }
 }
 
@@ -400,7 +406,7 @@ void nfa_p2p_proc_llcp_disconnect_ind(tLLCP_SAP_CBACK_DATA* p_data) {
 
       nfa_p2p_cb.sap_cb[local_sap].p_cback(NFA_P2P_DISC_EVT, &evt_data);
 
-      LOG(ERROR) << StringPrintf("Link deactivated");
+      LOG(ERROR) << StringPrintf("%s - Link deactivated", __func__);
     }
   }
 }
@@ -459,12 +465,46 @@ void nfa_p2p_proc_llcp_disconnect_resp(tLLCP_SAP_CBACK_DATA* p_data) {
 
         nfa_p2p_cb.sap_cb[local_sap].p_cback(NFA_P2P_DISC_EVT, &evt_data);
       } else {
-        LOG(ERROR) << StringPrintf("No connection found");
+        LOG(ERROR) << StringPrintf("%s - No connection found", __func__);
+        /* Needed for NFC Forum CTO_INI_BV_07_x */
+        /* If the LLC receives a DM PDU with a DSAP value equal to the SSAP
+         * value of a sent
+         * but not yet acknowledged CONNECT PDU, it SHALL abandon connection
+         * establishment
+         * and report the reason to the service layer */
+        nfa_p2p_cb.sap_cb[local_sap].p_cback(NFA_P2P_DISC_EVT, &evt_data);
       }
     } else {
       evt_data.disc.handle = (NFA_HANDLE_GROUP_P2P | local_sap);
       nfa_p2p_cb.sap_cb[local_sap].p_cback(NFA_P2P_DISC_EVT, &evt_data);
     }
+  }
+}
+
+/*******************************************************************************
+**
+** Function         nfa_p2p_proc_llcp_tx_complete
+**
+** Description      Processing LLCP tx complete event
+**
+**
+** Returns          None
+**
+*******************************************************************************/
+void nfa_p2p_proc_llcp_tx_complete(tLLCP_SAP_CBACK_DATA* p_data) {
+  uint8_t local_sap, remote_sap, xx;
+  tNFA_P2P_EVT_DATA evt_data;
+
+  local_sap = p_data->tx_complete.local_sap;
+  remote_sap = p_data->tx_complete.remote_sap;
+
+  xx = nfa_p2p_find_conn_cb(local_sap, remote_sap);
+
+  if (xx != LLCP_MAX_DATA_LINK) {
+    evt_data.txcomplete.handle =
+        (NFA_HANDLE_GROUP_P2P | NFA_P2P_HANDLE_FLAG_CONN | xx);
+
+    nfa_p2p_cb.sap_cb[local_sap].p_cback(NFA_P2P_TXCOMPLETE_EVT, &evt_data);
   }
 }
 
@@ -489,12 +529,12 @@ void nfa_p2p_proc_llcp_congestion(tLLCP_SAP_CBACK_DATA* p_data) {
   evt_data.congest.is_congested = p_data->congest.is_congested;
 
   if (p_data->congest.is_congested) {
-    DLOG_IF(INFO, nfc_debug_enabled)
-        << StringPrintf("START SAP=(0x%x,0x%x)", local_sap, remote_sap);
+    DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+        "%s - START SAP=(0x%x,0x%x)", __func__, local_sap, remote_sap);
 
   } else {
-    DLOG_IF(INFO, nfc_debug_enabled)
-        << StringPrintf("END SAP=(0x%x,0x%x)", local_sap, remote_sap);
+    DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+        "%s - END SAP=(0x%x,0x%x)", __func__, local_sap, remote_sap);
   }
 
   if (nfa_p2p_cb.sap_cb[local_sap].p_cback) {
@@ -532,7 +572,7 @@ void nfa_p2p_proc_llcp_congestion(tLLCP_SAP_CBACK_DATA* p_data) {
           nfa_p2p_cb.sap_cb[local_sap].p_cback(NFA_P2P_CONGEST_EVT, &evt_data);
         }
       } else {
-        LOG(ERROR) << StringPrintf("No connection found");
+        LOG(ERROR) << StringPrintf("%s - No connection found", __func__);
       }
     }
   }
@@ -552,8 +592,8 @@ void nfa_p2p_proc_llcp_link_status(tLLCP_SAP_CBACK_DATA* p_data) {
   uint8_t local_sap, xx;
   tNFA_P2P_EVT_DATA evt_data;
 
-  DLOG_IF(INFO, nfc_debug_enabled)
-      << StringPrintf("is_activated:%d", p_data->link_status.is_activated);
+  DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+      "%s - is_activated:%d", __func__, p_data->link_status.is_activated);
 
   local_sap = p_data->link_status.local_sap;
 
@@ -867,7 +907,8 @@ bool nfa_p2p_disconnect(tNFA_P2P_MSG* p_msg) {
       }
     }
   } else {
-    LOG(ERROR) << StringPrintf("Handle is not for Data link connection");
+    LOG(ERROR) << StringPrintf("%s - Handle is not for Data link connection",
+                               __func__);
   }
 
   return true;
@@ -1062,6 +1103,25 @@ bool nfa_p2p_get_link_info(tNFA_P2P_MSG* p_msg) {
 
   local_sap = (uint8_t)(p_msg->api_link_info.handle & NFA_HANDLE_MASK);
   nfa_p2p_cb.sap_cb[local_sap].p_cback(NFA_P2P_LINK_INFO_EVT, &evt_data);
+
+  return true;
+}
+
+/*******************************************************************************
+**
+** Function         nfa_p2p_set_txcomplete_callback
+**
+** Description      Set callback used to notify the acknowledgment of last
+**                  transmitted PDU
+**
+** Returns          true
+**
+*******************************************************************************/
+bool nfa_p2p_set_txcomplete_callback(tNFA_P2P_MSG* p_msg) {
+  DLOG_IF(INFO, nfc_debug_enabled) << __func__;
+
+  LLCP_SetTxCompleteNtf(p_msg->api_set_txcomplete_callback.lsap,
+                        p_msg->api_set_txcomplete_callback.rsap);
 
   return true;
 }

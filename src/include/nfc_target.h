@@ -50,6 +50,17 @@
 #define NFC_MBOX_ID (TASK_MBOX_0)
 #endif
 
+/* Mailbox event mask for NFC stack */
+#ifndef NFC_MBOX_SLOW_EVT_MASK
+#define NFC_MBOX_SLOW_EVT_MASK (TASK_MBOX_1_EVT_MASK)
+#endif
+
+/* Mailbox ID for NFC stack */
+#ifndef NFC_MBOX_SLOW_ID
+#define NFC_MBOX_SLOW_ID (TASK_MBOX_1)
+#endif
+
+
 /* Mailbox event mask for NFA */
 #ifndef NFA_MBOX_EVT_MASK
 #define NFA_MBOX_EVT_MASK (TASK_MBOX_2_EVT_MASK)
@@ -184,7 +195,12 @@
 
 /* Timeout for receiving response to NCI command */
 #ifndef NFC_CMD_CMPL_TIMEOUT
-#define NFC_CMD_CMPL_TIMEOUT 2
+#define NFC_CMD_CMPL_TIMEOUT 10
+#endif
+
+/* Timeout for receiving credits for data connection*/
+#ifndef NFC_CREDITS_RX_TIMEOUT
+#define NFC_CREDITS_RX_TIMEOUT 2
 #endif
 
 /* Timeout for waiting on data credit/NFC-DEP */
@@ -236,7 +252,7 @@
 
 /* Maximum time to discover NFCEE */
 #ifndef NFA_EE_DISCV_TIMEOUT_VAL
-#define NFA_EE_DISCV_TIMEOUT_VAL 2000
+#define NFA_EE_DISCV_TIMEOUT_VAL 300
 #endif
 
 /* Number of times reader/writer should attempt to resend a command on failure
@@ -252,7 +268,7 @@
 
 /* RW Type 1 Tag timeout for each API call, in ms */
 #ifndef RW_T1T_TOUT_RESP
-#define RW_T1T_TOUT_RESP 100
+#define RW_T1T_TOUT_RESP 500
 #endif
 
 /* CE Type 2 Tag timeout for controller command, in ms */
@@ -273,8 +289,7 @@
 
 /* RW Type 3 Tag timeout for each API call, in ms */
 #ifndef RW_T3T_TOUT_RESP
-/* NFC-Android will use 100 instead of 75 for T3t presence-check */
-#define RW_T3T_TOUT_RESP 100
+#define RW_T3T_TOUT_RESP 500
 #endif
 
 /* CE Type 3 Tag maximum response timeout index (for check and update, used in
@@ -297,8 +312,13 @@
 
 /* CE Type 4 Tag, Frame Waiting time Integer */
 #ifndef CE_T4T_ISO_DEP_FWI
-#define CE_T4T_ISO_DEP_FWI 7
+#define CE_T4T_LI_A_RATS 0x70
 #endif
+/* ST-NFC - Begin */
+#ifndef RW_CI_TOUT_RESP
+#define RW_CI_TOUT_RESP 1000
+#endif
+/* ST-NFC - End */
 
 /* RW Type 4 Tag timeout for each API call, in ms */
 #ifndef RW_T4T_TOUT_RESP
@@ -538,7 +558,7 @@
 
 /* Timeout for waiting for the response to HCP Command packet */
 #ifndef NFA_HCI_RESPONSE_TIMEOUT
-#define NFA_HCI_RESPONSE_TIMEOUT 1000
+#define NFA_HCI_RESPONSE_TIMEOUT 3000
 #endif
 
 /* Default poll duration (may be over-ridden using NFA_SetRfDiscoveryDuration)
@@ -634,7 +654,7 @@
 
 /* Maximum number of AID entries per target_handle  */
 #ifndef NFA_EE_MAX_AID_ENTRIES
-#define NFA_EE_MAX_AID_ENTRIES (32)
+#define NFA_EE_MAX_AID_ENTRIES (60)
 #endif
 
 /* Maximum number of callback functions can be registered through

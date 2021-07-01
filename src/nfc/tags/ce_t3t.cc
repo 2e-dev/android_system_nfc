@@ -53,8 +53,8 @@ enum { CE_T3T_STATE_NOT_ACTIVATED, CE_T3T_STATE_IDLE, CE_T3T_STATE_UPDATING };
 #define CE_T3T_UPDATE_FL_UPDATE 0x04
 
 /*******************************************************************************
-* Static constant definitions
-*******************************************************************************/
+ * Static constant definitions
+ *******************************************************************************/
 /* Default PMm param */
 static const uint8_t CE_DEFAULT_LF_PMM[NCI_T3T_PMM_LEN] = {
     0x01, /* This PAD0 is used to identify HCE-F on Android */
@@ -95,7 +95,7 @@ void ce_t3t_send_to_lower(NFC_HDR* p_msg) {
   p_msg->len += 1; /* Increment len to include SoD */
 
   if (NFC_SendData(NFC_RF_CONN_ID, p_msg) != NFC_STATUS_OK) {
-    LOG(ERROR) << StringPrintf("failed");
+    LOG(ERROR) << StringPrintf("%s - failed", __func__);
   }
 }
 
@@ -183,7 +183,7 @@ void ce_t3t_send_rsp(tCE_CB* p_ce_cb, uint8_t* p_nfcid2, uint8_t opcode,
     ce_t3t_send_to_lower(p_rsp_msg);
   } else {
     LOG(ERROR) << StringPrintf(
-        "CE: Unable to allocat buffer for response message");
+        "%s - CE: Unable to allocat buffer for response message", __func__);
   }
 }
 
@@ -230,7 +230,8 @@ void ce_t3t_handle_update_cmd(tCE_CB* p_ce_cb, NFC_HDR* p_cmd_msg) {
     /* Reject UPDATE command if service code=T3T_MSG_NDEF_SC_RO */
     if (service_code == T3T_MSG_NDEF_SC_RO) {
       /* Error: invalid block number to update */
-      LOG(ERROR) << StringPrintf("CE: UPDATE request using read-only service");
+      LOG(ERROR) << StringPrintf(
+          "%s - CE: UPDATE request using read-only service", __func__);
       nfc_status = NFC_STATUS_FAILED;
       break;
     }
@@ -239,18 +240,21 @@ void ce_t3t_handle_update_cmd(tCE_CB* p_ce_cb, NFC_HDR* p_cmd_msg) {
     if (service_code == T3T_MSG_NDEF_SC_RW) {
       if (p_cb->cur_cmd.num_blocks > p_cb->ndef_info.nbw) {
         LOG(ERROR) << StringPrintf(
-            "CE: Requested too many blocks to update (requested: %i, max: %i)",
-            p_cb->cur_cmd.num_blocks, p_cb->ndef_info.nbw);
+            "%s - CE: Requested too many blocks to update (requested: %i, max: "
+            "%i)",
+            __func__, p_cb->cur_cmd.num_blocks, p_cb->ndef_info.nbw);
         nfc_status = NFC_STATUS_FAILED;
         break;
       } else if (p_cb->ndef_info.rwflag == T3T_MSG_NDEF_RWFLAG_RO) {
         LOG(ERROR) << StringPrintf(
-            "CE: error: write-request to read-only NDEF message.");
+            "%s - CE: error: write-request to read-only NDEF message.",
+            __func__);
         nfc_status = NFC_STATUS_FAILED;
         break;
       } else if (block_number == 0) {
-        DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-            "CE: Update sc 0x%04x block %i.", service_code, block_number);
+        DLOG_IF(INFO, nfc_debug_enabled)
+            << StringPrintf("%s - CE: Update sc 0x%04x block %i.", __func__,
+                            service_code, block_number);
 
         /* Special caes: NDEF block0 is the ndef attribute block */
         p_temp = p_block_data;
@@ -273,7 +277,7 @@ void ce_t3t_handle_update_cmd(tCE_CB* p_ce_cb, NFC_HDR* p_cmd_msg) {
         /* Compare calcuated checksum with received checksum */
         if (checksum != checksum_rx) {
           LOG(ERROR) << StringPrintf(
-              "CE: Checksum failed for NDEF attribute block.");
+              "%s - CE: Checksum failed for NDEF attribute block.", __func__);
           nfc_status = NFC_STATUS_FAILED;
         } else {
           /* Update NDEF attribute block (only allowed to update current length
@@ -291,16 +295,18 @@ void ce_t3t_handle_update_cmd(tCE_CB* p_ce_cb, NFC_HDR* p_cmd_msg) {
           }
         }
       } else {
-        DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-            "CE: Udpate sc 0x%04x block %i.", service_code, block_number);
+        DLOG_IF(INFO, nfc_debug_enabled)
+            << StringPrintf("%s - CE: Udpate sc 0x%04x block %i.", __func__,
+                            service_code, block_number);
 
         /* Verify that block_number is within NDEF memory */
         if (block_number > p_cb->ndef_info.nmaxb) {
           /* Error: invalid block number to update */
           LOG(ERROR) << StringPrintf(
-              "CE: Requested invalid NDEF block number to update %i (max is "
+              "%s - CE: Requested invalid NDEF block number to update %i (max "
+              "is "
               "%i).",
-              block_number, p_cb->ndef_info.nmaxb);
+              __func__, block_number, p_cb->ndef_info.nmaxb);
           nfc_status = NFC_STATUS_FAILED;
           break;
         } else {
@@ -316,8 +322,9 @@ void ce_t3t_handle_update_cmd(tCE_CB* p_ce_cb, NFC_HDR* p_cmd_msg) {
       }
     } else {
       /* Error: invalid service code */
-      LOG(ERROR) << StringPrintf("CE: Requested invalid service code: 0x%04x.",
-                                 service_code);
+      LOG(ERROR) << StringPrintf(
+          "%s - CE: Requested invalid service code: 0x%04x.", __func__,
+          service_code);
       nfc_status = NFC_STATUS_FAILED;
       break;
     }
@@ -416,8 +423,9 @@ void ce_t3t_handle_check_cmd(tCE_CB* p_ce_cb, NFC_HDR* p_cmd_msg) {
         if (p_cb->cur_cmd.num_blocks > p_cb->ndef_info.nbr) {
           /* Error: invalid number of blocks to check */
           LOG(ERROR) << StringPrintf(
-              "CE: Requested too many blocks to check (requested: %i, max: %i)",
-              p_cb->cur_cmd.num_blocks, p_cb->ndef_info.nbr);
+              "%s - CE: Requested too many blocks to check (requested: %i, "
+              "max: %i)",
+              __func__, p_cb->cur_cmd.num_blocks, p_cb->ndef_info.nbr);
 
           p_dst = p_status;
           UINT8_TO_STREAM(p_dst, T3T_MSG_RSP_STATUS_ERROR);
@@ -460,7 +468,8 @@ void ce_t3t_handle_check_cmd(tCE_CB* p_ce_cb, NFC_HDR* p_cmd_msg) {
             p_dst = p_status;
 
             LOG(ERROR) << StringPrintf(
-                "CE: Requested block number to check %i.", block_number);
+                "%s - CE: Requested block number to check %i.", __func__,
+                block_number);
 
             /* Error: invalid number of blocks to check */
             UINT8_TO_STREAM(p_dst, T3T_MSG_RSP_STATUS_ERROR);
@@ -478,8 +487,9 @@ void ce_t3t_handle_check_cmd(tCE_CB* p_ce_cb, NFC_HDR* p_cmd_msg) {
                   T3T_MSG_BLOCKSIZE);
             } else {
               ARRAY_TO_STREAM(
-                  p_dst, (&p_cb->ndef_info
-                               .p_buf[(block_number - 1) * T3T_MSG_BLOCKSIZE]),
+                  p_dst,
+                  (&p_cb->ndef_info
+                        .p_buf[(block_number - 1) * T3T_MSG_BLOCKSIZE]),
                   T3T_MSG_BLOCKSIZE);
             }
           }
@@ -487,7 +497,8 @@ void ce_t3t_handle_check_cmd(tCE_CB* p_ce_cb, NFC_HDR* p_cmd_msg) {
       } else {
         /* Error: invalid service code */
         LOG(ERROR) << StringPrintf(
-            "CE: Requested invalid service code: 0x%04x.", service_code);
+            "%s - CE: Requested invalid service code: 0x%04x.", __func__,
+            service_code);
 
         p_dst = p_status;
         UINT8_TO_STREAM(p_dst, T3T_MSG_RSP_STATUS_ERROR);
@@ -500,7 +511,7 @@ void ce_t3t_handle_check_cmd(tCE_CB* p_ce_cb, NFC_HDR* p_cmd_msg) {
     ce_t3t_send_to_lower(p_rsp_msg);
   } else {
     LOG(ERROR) << StringPrintf(
-        "CE: Unable to allocat buffer for response message");
+        "%s - CE: Unable to allocat buffer for response message", __func__);
   }
 
   GKI_freebuf(p_cmd_msg);
@@ -593,7 +604,8 @@ void ce_t3t_handle_non_nfc_forum_cmd(tCE_CB* p_mem_cb, uint8_t cmd_id,
       case T3T_MSG_OPC_REQ_SERVICE_CMD:
       default:
         /* Unhandled command */
-        LOG(ERROR) << StringPrintf("Unhandled CE opcode: %02x", cmd_id);
+        LOG(ERROR) << StringPrintf("%s - Unhandled CE opcode: %02x", __func__,
+                                   cmd_id);
         send_response = false;
         break;
     }
@@ -606,7 +618,7 @@ void ce_t3t_handle_non_nfc_forum_cmd(tCE_CB* p_mem_cb, uint8_t cmd_id,
     }
   } else {
     LOG(ERROR) << StringPrintf(
-        "CE: Unable to allocat buffer for response message");
+        "%s - CE: Unable to allocat buffer for response message", __func__);
   }
   GKI_freebuf(p_cmd_msg);
 }
@@ -648,7 +660,8 @@ void ce_t3t_data_cback(tNFC_DATA_CEVT* p_data) {
   /* Verify that message contains at least Sod and cmd_id */
   if (p_msg->len < 2) {
     LOG(ERROR) << StringPrintf(
-        "CE: received invalid T3t message (invalid length: %i)", p_msg->len);
+        "%s - CE: received invalid T3t message (invalid length: %i)", __func__,
+        p_msg->len);
   } else {
     /* Get and validate command opcode */
     STREAM_TO_UINT8(sod, p);
@@ -658,7 +671,8 @@ void ce_t3t_data_cback(tNFC_DATA_CEVT* p_data) {
     cmd_type = ce_t3t_is_valid_opcode(cmd_id);
     if (cmd_type == CE_T3T_COMMAND_INVALID) {
       LOG(ERROR) << StringPrintf(
-          "CE: received invalid T3t message (invalid command: 0x%02X)", cmd_id);
+          "%s - CE: received invalid T3t message (invalid command: 0x%02X)",
+          __func__, cmd_id);
     } else if (cmd_type == CE_T3T_COMMAND_FELICA) {
       ce_t3t_handle_non_nfc_forum_cmd(p_ce_cb, cmd_id, p_msg);
       msg_processed = true;
@@ -666,8 +680,8 @@ void ce_t3t_data_cback(tNFC_DATA_CEVT* p_data) {
       /* Verify that message contains at least NFCID2 and NUM services */
       if (p_msg->len < T3T_MSG_CMD_COMMON_HDR_LEN) {
         LOG(ERROR) << StringPrintf(
-            "CE: received invalid T3t message (invalid length: %i)",
-            p_msg->len);
+            "%s - CE: received invalid T3t message (invalid length: %i)",
+            __func__, p_msg->len);
       } else {
         /* Handle NFC_FORUM command (UPDATE or CHECK) */
         STREAM_TO_ARRAY(cmd_nfcid2, p, NCI_RF_F_UID_LEN);
@@ -691,9 +705,8 @@ void ce_t3t_data_cback(tNFC_DATA_CEVT* p_data) {
                      0) {
             LOG(ERROR) << StringPrintf(
                 "CE: received invalid T3t message (invalid NFCID2)");
-            p_nfcid2 =
-                cmd_nfcid2; /* respond with ERROR using the NFCID2 from the
-                               command message */
+            p_nfcid2 = cmd_nfcid2; /* respond with ERROR using the NFCID2 from
+                                      the command message */
           } else if (p_msg->len < block_list_start_offset) {
             /* Does not have minimum (including number_of_blocks field) */
             LOG(ERROR) << StringPrintf("CE: incomplete message");
@@ -736,6 +749,7 @@ void ce_t3t_data_cback(tNFC_DATA_CEVT* p_data) {
                          (remaining < 3)) {
                 /* Unexpected end of message (while reading 3-byte entry) */
                 LOG(ERROR) << StringPrintf(
+
                     "CE: received invalid T3t message (unexpected end of "
                     "block-list)");
                 block_list_ok = false;
@@ -873,8 +887,9 @@ tNFC_STATUS CE_T3tSetLocalNDEFMsg(bool read_only, uint32_t size_max,
   /* Verify scratch buffer was provided if NDEF message is read/write */
   if ((!read_only) && (!p_scratch_buf)) {
     LOG(ERROR) << StringPrintf(
-        "p_scratch_buf cannot be NULL if not "
-        "read-only");
+        "%s - p_scratch_buf cannot be NULL if not "
+        "read-only",
+        __func__);
     return NFC_STATUS_FAILED;
   }
 
@@ -986,7 +1001,7 @@ tNFC_STATUS CE_T3tSendCheckRsp(uint8_t status1, uint8_t status2,
     ce_t3t_send_to_lower(p_rsp_msg);
   } else {
     LOG(ERROR) << StringPrintf(
-        "CE: Unable to allocate buffer for response message");
+        "%s - CE: Unable to allocate buffer for response message", __func__);
   }
 
   return (retval);

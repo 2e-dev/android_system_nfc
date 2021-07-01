@@ -60,7 +60,7 @@ void nfa_sys_cback_notify_enable_complete(uint8_t id) {
   nfa_sys_cb.enable_cplt_flags |= (0x0001 << id);
 
   DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-      "enable_cplt_flags=0x%x, enable_cplt_mask=0x%x",
+      "%s - enable_cplt_flags=0x%x, enable_cplt_mask=0x%x", __func__,
       nfa_sys_cb.enable_cplt_flags, nfa_sys_cb.enable_cplt_mask);
 
   if ((nfa_sys_cb.enable_cplt_flags == nfa_sys_cb.enable_cplt_mask) &&
@@ -99,9 +99,10 @@ void nfa_sys_cback_reg_nfcc_power_mode_proc_complete(
 void nfa_sys_cback_notify_nfcc_power_mode_proc_complete(uint8_t id) {
   nfa_sys_cb.proc_nfcc_pwr_mode_cplt_flags |= (0x0001 << id);
 
-  DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-      "flags=0x%x, mask=0x%x", nfa_sys_cb.proc_nfcc_pwr_mode_cplt_flags,
-      nfa_sys_cb.proc_nfcc_pwr_mode_cplt_mask);
+  DLOG_IF(INFO, nfc_debug_enabled)
+      << StringPrintf("%s - flags=0x%x, mask=0x%x", __func__,
+                      nfa_sys_cb.proc_nfcc_pwr_mode_cplt_flags,
+                      nfa_sys_cb.proc_nfcc_pwr_mode_cplt_mask);
 
   /* except SYS */
   if ((nfa_sys_cb.proc_nfcc_pwr_mode_cplt_flags ==

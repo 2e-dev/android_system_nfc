@@ -32,17 +32,17 @@ namespace nfc {
 namespace V1_0 {
 struct INfc;
 struct INfcClientCallback;
-}
+}  // namespace V1_0
 namespace V1_1 {
 struct INfc;
 struct INfcClientCallback;
-}
+}  // namespace V1_1
 namespace V1_2 {
 struct INfc;
 }
-}
-}
-}
+}  // namespace nfc
+}  // namespace hardware
+}  // namespace android
 
 class ThreadMutex {
  public:
@@ -109,11 +109,12 @@ class NfcAdaptation {
   static android::sp<android::hardware::nfc::V1_1::INfc> mHal_1_1;
   static android::sp<android::hardware::nfc::V1_2::INfc> mHal_1_2;
   static android::hardware::nfc::V1_1::INfcClientCallback* mCallback;
+
   sp<NfcHalDeathRecipient> mNfcHalDeathRecipient;
+
   static tHAL_NFC_CBACK* mHalCallback;
   static tHAL_NFC_DATA_CBACK* mHalDataCallback;
   static ThreadCondVar mHalOpenCompletedEvent;
-  static ThreadCondVar mHalCloseCompletedEvent;
 
   static uint32_t NFCA_TASK(uint32_t arg);
   static uint32_t Thread(uint32_t arg);

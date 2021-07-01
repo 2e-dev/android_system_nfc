@@ -64,6 +64,7 @@ enum {
   NFA_DM_TIMEOUT_DISABLE_EVT,
   NFA_DM_API_SET_POWER_SUB_STATE_EVT,
   NFA_DM_API_SEND_RAW_VS_EVT,
+  NFA_DM_API_REG_RESTART_EVT,
   NFA_DM_MAX_EVT
 };
 
@@ -172,6 +173,10 @@ typedef struct {
   tNFA_VSC_CBACK* p_cback;
   bool is_register;
 } tNFA_DM_API_REG_VSC;
+typedef struct {
+  NFC_HDR hdr;
+  void* p_cback;
+} tNFA_DM_API_REG_RESTART;
 
 /* data type for NFA_DM_API_SEND_VSC_EVT */
 typedef struct {
@@ -221,6 +226,7 @@ typedef union {
   tNFA_DM_API_REG_VSC reg_vsc;       /* NFA_DM_API_REG_VSC_EVT               */
   /* NFA_DM_API_SET_POWER_SUB_STATE_EVT */
   tNFA_DM_API_SET_POWER_SUB_STATE set_power_state;
+  tNFA_DM_API_REG_RESTART reg_restart; /* NFA_DM_API_REG_RESTART_EVT */
 } tNFA_DM_MSG;
 
 /* DM RF discovery state */
@@ -294,6 +300,7 @@ typedef uint8_t tNFA_DM_RF_DISC_EVT;
 /* Legacy/proprietary/non-NFC Forum protocol (e.g Shanghai transit card) */
 #define NFA_DM_DISC_MASK_P_LEGACY 0x00002000
 #define NFA_DM_DISC_MASK_PA_MIFARE 0x00004000
+#define NFA_DM_DISC_MASK_PB_CI 0x00008000
 #define NFA_DM_DISC_MASK_POLL 0x0000FFFF
 
 #define NFA_DM_DISC_MASK_LA_T1T 0x00010000
@@ -468,6 +475,8 @@ typedef struct {
   uint8_t lb_appdata_len;
   uint8_t lb_adc_fo[NCI_PARAM_LEN_LB_ADC_FO];
   uint8_t lb_adc_fo_len;
+  uint8_t lb_bit_rate[NCI_PARAM_LEN_LB_BIT_RATE];
+  uint8_t lb_bit_rate_len;
   uint8_t lb_h_info[NCI_MAX_ATTRIB_LEN];
   uint8_t lb_h_info_len;
 
@@ -480,6 +489,8 @@ typedef struct {
                    [NCI_PARAM_LEN_LF_T3T_ID(NCI_VERSION_2_0)];
 
   uint8_t fwi[NCI_PARAM_LEN_FWI];
+  uint8_t li_a_rats_tb1[NCI_PARAM_LEN_LI_A_RATS_TB1];
+  uint8_t li_a_rats_tc1[NCI_PARAM_LEN_LI_A_RATS_TC1];
   uint8_t wt[NCI_PARAM_LEN_WT];
   uint8_t atr_req_gen_bytes[NCI_MAX_GEN_BYTES_LEN];
   uint8_t atr_req_gen_bytes_len;
@@ -541,11 +552,15 @@ typedef struct {
   /* NFCC power mode */
   uint8_t nfcc_pwr_mode; /* NFA_DM_PWR_MODE_FULL or NFA_DM_PWR_MODE_OFF_SLEEP */
 
+  uint8_t manu_specific_info[40];
+  bool custom_config;
+  tNFC_DEACT_TYPE listen_deact_cmd_type;
+  bool is_already_disc;
   uint8_t deactivate_cmd_retry_count; /*number of times the deactivation cmd
                                          sent in case of error scenerio */
 
-  uint8_t power_state; /* current screen/power  state */
-  uint32_t eDtaMode;   /* To enable the DTA type modes. */
+  uint8_t power_state;         /* current screen/power  state */
+  uint32_t eDtaMode;           /* To enable the DTA type modes. */
   uint8_t pending_power_state; /* pending screen state change received in
                                   LISTEN_ACTIVE state which needs to be applied
                                   after current transaction is completed*/
@@ -632,6 +647,8 @@ bool nfa_dm_ndef_reg_hdlr(tNFA_DM_MSG* p_data);
 bool nfa_dm_ndef_dereg_hdlr(tNFA_DM_MSG* p_data);
 
 bool nfa_dm_act_reg_vsc(tNFA_DM_MSG* p_data);
+bool nfa_dm_act_reg_restart(tNFA_DM_MSG* p_data);
+
 bool nfa_dm_act_send_vsc(tNFA_DM_MSG* p_data);
 uint16_t nfa_dm_act_get_rf_disc_duration();
 bool nfa_dm_act_disable_timeout(tNFA_DM_MSG* p_data);
@@ -673,6 +690,8 @@ tNFC_STATUS nfa_dm_disc_sleep_wakeup(void);
 tNFC_STATUS nfa_dm_disc_start_kovio_presence_check(void);
 bool nfa_dm_is_raw_frame_session(void);
 bool nfa_dm_is_p2p_paused(void);
+
+void nfa_dm_get_tech_route_block(uint8_t* listen_techmask, bool* enable);
 
 #if (NFC_NFCEE_INCLUDED == FALSE)
 #define nfa_ee_get_tech_route(ps, ha) \

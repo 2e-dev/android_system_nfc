@@ -44,7 +44,7 @@ extern bool nfc_debug_enabled;
 #endif
 
 /* Define the structure that holds the GKI variables
-*/
+ */
 tGKI_CB gki_cb;
 
 #define NANOSEC_PER_MILLISEC (1000000)
@@ -139,6 +139,9 @@ void GKI_init(void) {
   p_os->no_timer_suspend = GKI_TIMER_TICK_RUN_COND;
   pthread_mutex_init(&p_os->gki_timer_mutex, nullptr);
   pthread_cond_init(&p_os->gki_timer_cond, nullptr);
+  pthread_mutex_init(&p_os->gki_end_mutex, nullptr);
+  pthread_cond_init(&p_os->gki_end_cond, nullptr);
+  p_os->end_flag = 0;
 }
 
 /*******************************************************************************
@@ -153,7 +156,7 @@ void GKI_init(void) {
 *******************************************************************************/
 uint32_t GKI_get_os_tick_count(void) {
   /* TODO - add any OS specific code here
-  **/
+   **/
   return (gki_cb.com.OSTicks);
 }
 
@@ -196,6 +199,9 @@ uint8_t GKI_create_task(TASKPTR task_entry, uint8_t task_id, int8_t* taskname,
   if (task_id >= GKI_MAX_TASKS) {
     DLOG_IF(INFO, nfc_debug_enabled)
         << StringPrintf("Error! task ID > max task allowed");
+
+    pthread_condattr_destroy(&attr);
+
     return (GKI_FAILURE);
   }
 
@@ -234,6 +240,9 @@ uint8_t GKI_create_task(TASKPTR task_entry, uint8_t task_id, int8_t* taskname,
 
   ret = pthread_create(&gki_cb.os.thread_id[task_id], &attr1, gki_task_entry,
                        &gki_pthread_info[task_id]);
+
+  pthread_condattr_destroy(&attr);
+  pthread_attr_destroy(&attr1);
 
   if (ret != 0) {
     DLOG_IF(INFO, nfc_debug_enabled)
@@ -318,11 +327,7 @@ void GKI_shutdown(void) {
     }
   }
 
-  /* Destroy mutex and condition variable objects */
-  pthread_mutex_destroy(&gki_cb.os.GKI_mutex);
-/*    pthread_mutex_destroy(&GKI_sched_mutex); */
-/*    pthread_mutex_destroy(&thread_delay_mutex);
- pthread_cond_destroy (&thread_delay_cond); */
+
 #if (FALSE == GKI_PTHREAD_JOINABLE)
   i = 0;
 #endif
@@ -334,6 +339,16 @@ void GKI_shutdown(void) {
   *p_run_cond = GKI_TIMER_TICK_EXIT_COND;
   if (oldCOnd == GKI_TIMER_TICK_STOP_COND)
     pthread_cond_signal(&gki_cb.os.gki_timer_cond);
+
+  pthread_mutex_lock(&gki_cb.os.gki_end_mutex);
+  while (gki_cb.os.end_flag != 1) {
+    pthread_cond_wait(&gki_cb.os.gki_end_cond, &gki_cb.os.gki_end_mutex);
+  }
+  pthread_mutex_unlock(&gki_cb.os.gki_end_mutex);
+
+  pthread_mutex_destroy(&gki_cb.os.GKI_mutex);
+  pthread_mutex_destroy(&gki_cb.os.gki_end_mutex);
+  pthread_cond_destroy(&gki_cb.os.gki_end_cond);
 }
 
 /*******************************************************************************
@@ -357,7 +372,7 @@ void gki_system_tick_start_stop_cback(bool start) {
      */
     /* GKI_disable(); */
     *p_run_cond = GKI_TIMER_TICK_STOP_COND;
-/* GKI_enable(); */
+    /* GKI_enable(); */
   } else {
     /* restart GKI_timer_update() loop */
     *p_run_cond = GKI_TIMER_TICK_RUN_COND;
@@ -422,6 +437,7 @@ void GKI_run(__attribute__((unused)) void* p_task_id) {
   struct timespec delay;
   int err = 0;
   volatile int* p_run_cond = &gki_cb.os.no_timer_suspend;
+  uint8_t rtask = 0;
 
 #ifndef GKI_NO_TICK_STOP
   /* register start stop function which disable timer loop in GKI_run() when no
@@ -447,6 +463,7 @@ void GKI_run(__attribute__((unused)) void* p_task_id) {
     return GKI_FAILURE;
   }
 #else
+  rtask = GKI_get_taskid();
   DLOG_IF(INFO, nfc_debug_enabled)
       << StringPrintf("GKI_run, run_cond(%p)=%d ", p_run_cond, *p_run_cond);
   for (; GKI_TIMER_TICK_EXIT_COND != *p_run_cond;) {
@@ -477,12 +494,19 @@ void GKI_run(__attribute__((unused)) void* p_task_id) {
 #ifdef GKI_TICK_TIMER_DEBUG
     DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(">>> SUSPENDED");
 #endif
+    if (gki_cb.com.OSRdyTbl[rtask] == TASK_DEAD) {
+      gki_cb.com.OSWaitEvt[rtask] = 0;
+      DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+          "GKI_run TASK_DEAD received. exit thread %d...", rtask);
+      gki_cb.os.thread_id[rtask] = 0;
+      break;
+    }
     if (GKI_TIMER_TICK_EXIT_COND != *p_run_cond) {
       pthread_mutex_lock(&gki_cb.os.gki_timer_mutex);
       pthread_cond_wait(&gki_cb.os.gki_timer_cond, &gki_cb.os.gki_timer_mutex);
       pthread_mutex_unlock(&gki_cb.os.gki_timer_mutex);
     }
-/* potentially we need to adjust os gki_cb.com.OSTicks */
+    /* potentially we need to adjust os gki_cb.com.OSTicks */
 
 #ifdef GKI_TICK_TIMER_DEBUG
     DLOG_IF(INFO, nfc_debug_enabled)
@@ -490,6 +514,12 @@ void GKI_run(__attribute__((unused)) void* p_task_id) {
 #endif
   } /* for */
 #endif
+
+  pthread_mutex_lock(&gki_cb.os.gki_end_mutex);
+  gki_cb.os.end_flag = 1;
+  pthread_cond_signal(&gki_cb.os.gki_end_cond);
+  pthread_mutex_unlock(&gki_cb.os.gki_end_mutex);
+
   DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf("%s exit", __func__);
 }
 
@@ -608,8 +638,10 @@ uint16_t GKI_wait(uint16_t flag, uint32_t timeout) {
                              &gki_cb.os.thread_evt_mutex[rtask], &abstime);
 
     } else {
-      pthread_cond_wait(&gki_cb.os.thread_evt_cond[rtask],
-                        &gki_cb.os.thread_evt_mutex[rtask]);
+      if (gki_cb.com.OSRdyTbl[rtask] != TASK_DEAD) {
+        pthread_cond_wait(&gki_cb.os.thread_evt_cond[rtask],
+                          &gki_cb.os.thread_evt_mutex[rtask]);
+      }
     }
 
     /* TODO: check, this is probably neither not needed depending on

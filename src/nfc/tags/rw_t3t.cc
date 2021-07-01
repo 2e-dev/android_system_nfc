@@ -168,10 +168,15 @@ const uint8_t rw_t3t_default_attrib_info[T3T_MSG_BLOCKSIZE] = {
     RW_T3T_DEFAULT_FELICALITE_NBW,            /* NBw (max block write per cmd)*/
     (RW_T3T_DEFAULT_FELICALITE_NMAXB >> 8),   /* Nmaxb (max size in blocks)   */
     (RW_T3T_DEFAULT_FELICALITE_NMAXB & 0xFF), /* Nmaxb (max size in blocks)   */
-    0, 0, 0, 0,                               /* Unused                       */
-    T3T_MSG_NDEF_WRITEF_OFF,                  /* WriteF                       */
-    T3T_MSG_NDEF_RWFLAG_RW,                   /* RW Flag                      */
-    0, 0, 0,                                  /* Ln (current size in bytes)   */
+    0,
+    0,
+    0,
+    0,                       /* Unused                       */
+    T3T_MSG_NDEF_WRITEF_OFF, /* WriteF                       */
+    T3T_MSG_NDEF_RWFLAG_RW,  /* RW Flag                      */
+    0,
+    0,
+    0, /* Ln (current size in bytes)   */
 
     (RW_T3T_DEFAULT_FELICALITE_ATTRIB_INFO_CHECKSUM >>
      8), /* checksum (high-byte) */
@@ -248,14 +253,6 @@ void rw_t3t_process_error(tNFC_STATUS status) {
       /* For GetSystemCode: tag did not respond to requested POLL */
       rw_t3t_handle_get_system_codes_cplt();
       return;
-    } else if ((p_cb->flags & (RW_T3T_FL_W4_PRESENCE_CHECK_POLL_RSP |
-                               RW_T3T_FL_W4_GET_SC_POLL_RSP |
-                               RW_T3T_FL_W4_FMT_FELICA_LITE_POLL_RSP |
-                               RW_T3T_FL_W4_SRO_FELICA_LITE_POLL_RSP |
-                               RW_T3T_FL_W4_NDEF_DETECT_POLL_RSP |
-                               RW_T3T_FL_W4_USER_POLL_RSP))) {
-      /* Tag did not respond correctly to requested POLL */
-      return;
     }
     /* Retry sending command if retry-count < max */
     else if (rw_cb.cur_retry < RW_MAX_RETRIES) {
@@ -263,15 +260,15 @@ void rw_t3t_process_error(tNFC_STATUS status) {
       rw_cb.cur_retry++;
 
       DLOG_IF(INFO, nfc_debug_enabled)
-          << StringPrintf("T3T retransmission attempt %i of %i",
+          << StringPrintf("%s - T3T retransmission attempt %i of %i", __func__,
                           rw_cb.cur_retry, RW_MAX_RETRIES);
 
       /* allocate a new buffer for message */
       p_cmd_buf = rw_t3t_get_cmd_buf();
       if (p_cmd_buf != nullptr) {
-        memcpy(p_cmd_buf, p_cb->p_cur_cmd_buf, sizeof(NFC_HDR) +
-                                                   p_cb->p_cur_cmd_buf->offset +
-                                                   p_cb->p_cur_cmd_buf->len);
+        memcpy(p_cmd_buf, p_cb->p_cur_cmd_buf,
+               sizeof(NFC_HDR) + p_cb->p_cur_cmd_buf->offset +
+                   p_cb->p_cur_cmd_buf->len);
 
         if (rw_t3t_send_to_lower(p_cmd_buf) == NFC_STATUS_OK) {
           /* Start timer for waiting for response */
@@ -279,12 +276,14 @@ void rw_t3t_process_error(tNFC_STATUS status) {
                                 p_cb->cur_tout);
           return;
         } else {
-          android_errorWriteLog(0x534e4554, "179687208");
+          /* failure - could not send buffer */
+          GKI_freebuf(p_cmd_buf);
         }
       }
     } else {
       DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-          "T3T maximum retransmission attempts reached (%i)", RW_MAX_RETRIES);
+          "%s - T3T maximum retransmission attempts reached (%i)", __func__,
+          RW_MAX_RETRIES);
     }
 
 #if (RW_STATS_INCLUDED == TRUE)
@@ -375,7 +374,6 @@ void rw_t3t_handle_nci_poll_ntf(uint8_t nci_status, uint8_t num_responses,
     rw_t3t_handle_ndef_detect_poll_rsp(p_cb, nci_status, num_responses);
   } else {
     /* Handle POLL ntf in response to RW_T3tPoll */
-    p_cb->flags &= ~RW_T3T_FL_W4_USER_POLL_RSP;
     evt_data.t3t_poll.status = nci_status;
     if (evt_data.t3t_poll.status == NCI_STATUS_OK) {
       evt_data.t3t_poll.rc = p_cb->cur_poll_rc;
@@ -408,10 +406,10 @@ void rw_t3t_handle_get_system_codes_cplt(void) {
   evt_data.t3t_sc.p_system_codes = p_cb->system_codes;
 
   DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-      "number of systems: %i", evt_data.t3t_sc.num_system_codes);
+      "%s - number of systems: %i", __func__, evt_data.t3t_sc.num_system_codes);
   for (i = 0; i < evt_data.t3t_sc.num_system_codes; i++) {
     DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-        "system %i: %04X", i, evt_data.t3t_sc.p_system_codes[i]);
+        "%s - system %i: %04X", __func__, i, evt_data.t3t_sc.p_system_codes[i]);
   }
 
   p_cb->rw_state = RW_T3T_STATE_IDLE;
@@ -485,15 +483,15 @@ void rw_t3t_process_timeout(TIMER_LIST_ENT* p_tle) {
 
   /* Check which timer timed out */
   if (p_tle == &p_cb->timer) {
-/* UPDATE/CHECK response timeout */
-LOG(ERROR) << StringPrintf("T3T timeout. state=%s cur_cmd=0x%02X (%s)",
-                           rw_t3t_state_str(rw_cb.tcb.t3t.rw_state).c_str(),
-                           rw_cb.tcb.t3t.cur_cmd,
-                           rw_t3t_cmd_str(rw_cb.tcb.t3t.cur_cmd).c_str());
+    /* UPDATE/CHECK response timeout */
+    LOG(ERROR) << StringPrintf(
+        "%s - T3T timeout. state=%s cur_cmd=0x%02X (%s)", __func__,
+        rw_t3t_state_str(rw_cb.tcb.t3t.rw_state).c_str(), rw_cb.tcb.t3t.cur_cmd,
+        rw_t3t_cmd_str(rw_cb.tcb.t3t.cur_cmd).c_str());
 
-rw_t3t_process_error(NFC_STATUS_TIMEOUT);
+    rw_t3t_process_error(NFC_STATUS_TIMEOUT);
   } else {
-    LOG(ERROR) << StringPrintf("T3T POLL timeout.");
+    LOG(ERROR) << StringPrintf("%s - T3T POLL timeout.", __func__);
 
     /* POLL response timeout */
     if (p_cb->flags & RW_T3T_FL_W4_PRESENCE_CHECK_POLL_RSP) {
@@ -509,12 +507,12 @@ rw_t3t_process_error(NFC_STATUS_TIMEOUT);
     } else if (p_cb->flags & RW_T3T_FL_W4_FMT_FELICA_LITE_POLL_RSP) {
       /* POLL timeout for formatting Felica Lite */
       p_cb->flags &= ~RW_T3T_FL_W4_FMT_FELICA_LITE_POLL_RSP;
-      LOG(ERROR) << StringPrintf("Felica-Lite tag not detected");
+      LOG(ERROR) << StringPrintf("%s - Felica-Lite tag not detected", __func__);
       rw_t3t_format_cplt(NFC_STATUS_FAILED);
     } else if (p_cb->flags & RW_T3T_FL_W4_SRO_FELICA_LITE_POLL_RSP) {
       /* POLL timeout for configuring Felica Lite read only */
       p_cb->flags &= ~RW_T3T_FL_W4_SRO_FELICA_LITE_POLL_RSP;
-      LOG(ERROR) << StringPrintf("Felica-Lite tag not detected");
+      LOG(ERROR) << StringPrintf("%s - Felica-Lite tag not detected", __func__);
       rw_t3t_set_readonly_cplt(NFC_STATUS_FAILED);
     } else if (p_cb->flags & RW_T3T_FL_W4_NDEF_DETECT_POLL_RSP) {
       /* POLL timeout for ndef detection */
@@ -539,10 +537,10 @@ rw_t3t_process_error(NFC_STATUS_TIMEOUT);
 **
 *******************************************************************************/
 void rw_t3t_process_frame_error(void) {
-  LOG(ERROR) << StringPrintf("T3T frame error. state=%s cur_cmd=0x%02X (%s)",
-                             rw_t3t_state_str(rw_cb.tcb.t3t.rw_state).c_str(),
-                             rw_cb.tcb.t3t.cur_cmd,
-                             rw_t3t_cmd_str(rw_cb.tcb.t3t.cur_cmd).c_str());
+  LOG(ERROR) << StringPrintf(
+      "%s - T3T frame error. state=%s cur_cmd=0x%02X (%s)", __func__,
+      rw_t3t_state_str(rw_cb.tcb.t3t.rw_state).c_str(), rw_cb.tcb.t3t.cur_cmd,
+      rw_t3t_cmd_str(rw_cb.tcb.t3t.cur_cmd).c_str());
 
 #if (RW_STATS_INCLUDED == TRUE)
   /* Update stats */
@@ -572,7 +570,7 @@ tNFC_STATUS rw_t3t_send_to_lower(NFC_HDR* p_msg) {
 #endif /* RW_STATS_INCLUDED */
 
   /* Set NFC-F SoD field (payload len + 1) */
-  if (p_msg->offset) p_msg->offset -= 1; /* Point to SoD field */
+  p_msg->offset -= 1; /* Point to SoD field */
   p = (uint8_t*)(p_msg + 1) + p_msg->offset;
   UINT8_TO_STREAM(p, (p_msg->len + 1));
   p_msg->len += 1; /* Increment len to include SoD */
@@ -636,8 +634,8 @@ tNFC_STATUS rw_t3t_send_cmd(tRW_T3T_CB* p_cb, uint8_t rw_t3t_cmd,
   }
 
   DLOG_IF(INFO, nfc_debug_enabled)
-      << StringPrintf("cur_tout: %d, timeout_ticks: %d ret:%d", p_cb->cur_tout,
-                      timeout_ticks, retval);
+      << StringPrintf("%s - cur_tout: %d, timeout_ticks: %d ret:%d", __func__,
+                      p_cb->cur_tout, timeout_ticks, retval);
   return (retval);
 }
 
@@ -922,8 +920,8 @@ tNFC_STATUS rw_t3t_send_next_ndef_check_cmd(tRW_T3T_CB* p_cb) {
     }
 
     DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-        "bytes_remaining: %i, cur_blocks_to_read: %i, is_final: %i",
-        ndef_bytes_remaining, cur_blocks_to_read,
+        "%s - bytes_remaining: %i, cur_blocks_to_read: %i, is_final: %i",
+        __func__, ndef_bytes_remaining, cur_blocks_to_read,
         (p_cb->flags & RW_T3T_FL_IS_FINAL_NDEF_SEGMENT));
 
     /* Add CHECK opcode to message  */
@@ -1187,7 +1185,8 @@ tNFC_STATUS rw_t3t_check_mc_block(tRW_T3T_CB* p_cb) {
     return rw_t3t_send_cmd(p_cb, p_cb->cur_cmd, p_cmd_buf,
                            rw_t3t_check_timeout(1));
   } else {
-    LOG(ERROR) << StringPrintf("Unable to allocate buffer to read MC block");
+    LOG(ERROR) << StringPrintf(
+        "%s - Unable to allocate buffer to read MC block", __func__);
     return (NFC_STATUS_NO_BUFFERS);
   }
 }
@@ -1206,12 +1205,6 @@ tNFC_STATUS rw_t3t_send_raw_frame(tRW_T3T_CB* p_cb, uint16_t len,
   NFC_HDR* p_cmd_buf;
   uint8_t* p;
   tNFC_STATUS retval = NFC_STATUS_OK;
-
-  /* GKI_BUF2 is used for NFC_RW_POOL */
-  if (len > GKI_BUF2_SIZE - NCI_MSG_OFFSET_SIZE - NCI_DATA_HDR_SIZE - 2) {
-    android_errorWriteLog(0x534e4554, "157649467");
-    return NFC_STATUS_NO_BUFFERS;
-  }
 
   p_cmd_buf = rw_t3t_get_cmd_buf();
   if (p_cmd_buf != nullptr) {
@@ -1261,7 +1254,7 @@ void rw_t3t_act_handle_ndef_detect_rsp(tRW_T3T_CB* p_cb, NFC_HDR* p_msg_rsp) {
   /* Check if response code is CHECK resp (for reading NDEF attribute block) */
   if (p_t3t_rsp[T3T_MSG_RSP_OFFSET_RSPCODE] != T3T_MSG_OPC_CHECK_RSP) {
     LOG(ERROR) << StringPrintf(
-        "Response error: expecting rsp_code %02X, but got %02X",
+        "%s - Response error: expecting rsp_code %02X, but got %02X", __func__,
         T3T_MSG_OPC_CHECK_RSP, p_t3t_rsp[T3T_MSG_RSP_OFFSET_RSPCODE]);
     evt_data.status = NFC_STATUS_FAILED;
   }
@@ -1316,10 +1309,9 @@ void rw_t3t_act_handle_ndef_detect_rsp(tRW_T3T_CB* p_cb, NFC_HDR* p_msg_rsp) {
          * compatible with our version. */
 
         /* Update NDEF info */
-        STREAM_TO_UINT8(
-            p_cb->ndef_attrib.nbr,
-            p); /* NBr: number of blocks that can be read using one Check
-                   command */
+        STREAM_TO_UINT8(p_cb->ndef_attrib.nbr,
+                        p); /* NBr: number of blocks that can be read using one
+                               Check command */
         STREAM_TO_UINT8(p_cb->ndef_attrib.nbw,
                         p); /* Nbw: number of blocks that can be written using
                                one Update command */
@@ -1339,12 +1331,14 @@ void rw_t3t_act_handle_ndef_detect_rsp(tRW_T3T_CB* p_cb, NFC_HDR* p_msg_rsp) {
         BE_STREAM_TO_UINT16(p_cb->ndef_attrib.ln, p); /* Ln: lo-word */
         p_cb->ndef_attrib.ln += (temp << 16);
 
+        DLOG_IF(INFO, nfc_debug_enabled)
+            << StringPrintf("%s - Detected NDEF Ver: 0x%02x", __func__,
+                            p_cb->ndef_attrib.version);
         DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-            "Detected NDEF Ver: 0x%02x", p_cb->ndef_attrib.version);
-        DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-            "Detected NDEF Attributes: Nbr=%i, Nbw=%i, Nmaxb=%i, WriteF=%i, "
+            "%s - Detected NDEF Attributes: Nbr=%i, Nbw=%i, Nmaxb=%i, "
+            "WriteF=%i, "
             "RWFlag=%i, Ln=%i",
-            p_cb->ndef_attrib.nbr, p_cb->ndef_attrib.nbw,
+            __func__, p_cb->ndef_attrib.nbr, p_cb->ndef_attrib.nbw,
             p_cb->ndef_attrib.nmaxb, p_cb->ndef_attrib.writef,
             p_cb->ndef_attrib.rwflag, p_cb->ndef_attrib.ln);
         if (p_cb->ndef_attrib.nbr > T3T_MSG_NUM_BLOCKS_CHECK_MAX ||
@@ -1352,9 +1346,10 @@ void rw_t3t_act_handle_ndef_detect_rsp(tRW_T3T_CB* p_cb, NFC_HDR* p_msg_rsp) {
           /* It would result in CHECK Responses exceeding the maximum length
            * of an NFC-F Frame */
           LOG(ERROR) << StringPrintf(
-              "Unsupported NDEF Attributes value: Nbr=%i, Nbw=%i, Nmaxb=%i,"
+              "%s - Unsupported NDEF Attributes value: Nbr=%i, Nbw=%i, "
+              "Nmaxb=%i,"
               "WriteF=%i, RWFlag=%i, Ln=%i",
-              p_cb->ndef_attrib.nbr, p_cb->ndef_attrib.nbw,
+              __func__, p_cb->ndef_attrib.nbr, p_cb->ndef_attrib.nbw,
               p_cb->ndef_attrib.nmaxb, p_cb->ndef_attrib.writef,
               p_cb->ndef_attrib.rwflag, p_cb->ndef_attrib.ln);
           p_cb->ndef_attrib.status = NFC_STATUS_FAILED;
@@ -1410,7 +1405,7 @@ void rw_t3t_act_handle_check_rsp(tRW_T3T_CB* p_cb, NFC_HDR* p_msg_rsp) {
     GKI_freebuf(p_msg_rsp);
   } else if (p_t3t_rsp[T3T_MSG_RSP_OFFSET_RSPCODE] != T3T_MSG_OPC_CHECK_RSP) {
     LOG(ERROR) << StringPrintf(
-        "Response error: expecting rsp_code %02X, but got %02X",
+        "%s - Response error: expecting rsp_code %02X, but got %02X", __func__,
         T3T_MSG_OPC_CHECK_RSP, p_t3t_rsp[T3T_MSG_RSP_OFFSET_RSPCODE]);
     nfc_status = NFC_STATUS_FAILED;
     GKI_freebuf(p_msg_rsp);
@@ -1459,7 +1454,7 @@ void rw_t3t_act_handle_update_rsp(tRW_T3T_CB* p_cb, NFC_HDR* p_msg_rsp) {
     evt_data.status = NFC_STATUS_FAILED;
   } else if (p_t3t_rsp[T3T_MSG_RSP_OFFSET_RSPCODE] != T3T_MSG_OPC_UPDATE_RSP) {
     LOG(ERROR) << StringPrintf(
-        "Response error: expecting rsp_code %02X, but got %02X",
+        "%s - Response error: expecting rsp_code %02X, but got %02X", __func__,
         T3T_MSG_OPC_UPDATE_RSP, p_t3t_rsp[T3T_MSG_RSP_OFFSET_RSPCODE]);
     evt_data.status = NFC_STATUS_FAILED;
   } else {
@@ -1491,8 +1486,8 @@ void rw_t3t_act_handle_raw_senddata_rsp(tRW_T3T_CB* p_cb,
   NFC_HDR* p_pkt = p_data->p_data;
 
   DLOG_IF(INFO, nfc_debug_enabled)
-      << StringPrintf("RW T3T Raw Frame: Len [0x%X] Status [%s]", p_pkt->len,
-                      NFC_GetStatusName(p_data->status).c_str());
+      << StringPrintf("%s - RW T3T Raw Frame: Len [0x%X] Status [%s]", __func__,
+                      p_pkt->len, NFC_GetStatusName(p_data->status).c_str());
 
   /* Copy incoming data into buffer */
   evt_data.status = p_data->status;
@@ -1535,14 +1530,14 @@ void rw_t3t_act_handle_check_ndef_rsp(tRW_T3T_CB* p_cb, NFC_HDR* p_msg_rsp) {
                   4))) /* verify length of response */
   {
     LOG(ERROR) << StringPrintf(
-        "Response error: bad status, nfcid2, or invalid len: %i %i",
-        p_t3t_rsp[T3T_MSG_RSP_OFFSET_NUMBLOCKS],
+        "%s - Response error: bad status, nfcid2, or invalid len: %i %i",
+        __func__, p_t3t_rsp[T3T_MSG_RSP_OFFSET_NUMBLOCKS],
         ((p_cb->ndef_rx_readlen + 15) >> 4));
     nfc_status = NFC_STATUS_FAILED;
     GKI_freebuf(p_msg_rsp);
   } else if (p_t3t_rsp[T3T_MSG_RSP_OFFSET_RSPCODE] != T3T_MSG_OPC_CHECK_RSP) {
     LOG(ERROR) << StringPrintf(
-        "Response error: expecting rsp_code %02X, but got %02X",
+        "%s - Response error: expecting rsp_code %02X, but got %02X", __func__,
         T3T_MSG_OPC_CHECK_RSP, p_t3t_rsp[T3T_MSG_RSP_OFFSET_RSPCODE]);
     nfc_status = NFC_STATUS_FAILED;
     GKI_freebuf(p_msg_rsp);
@@ -1561,9 +1556,9 @@ void rw_t3t_act_handle_check_ndef_rsp(tRW_T3T_CB* p_cb, NFC_HDR* p_msg_rsp) {
      * check-response header */
     if (rsp_num_bytes_rx > p_msg_rsp->len) {
       LOG(ERROR) << StringPrintf(
-          "Response error: CHECK rsp header indicates %i bytes, but only "
+          "%s - Response error: CHECK rsp header indicates %i bytes, but only "
           "received %i bytes",
-          rsp_num_bytes_rx, p_msg_rsp->len);
+          __func__, rsp_num_bytes_rx, p_msg_rsp->len);
       nfc_status = NFC_STATUS_FAILED;
       GKI_freebuf(p_msg_rsp);
     } else {
@@ -1632,7 +1627,7 @@ void rw_t3t_act_handle_update_ndef_rsp(tRW_T3T_CB* p_cb, NFC_HDR* p_msg_rsp) {
   /* Validate response opcode */
   else if (p_t3t_rsp[T3T_MSG_RSP_OFFSET_RSPCODE] != T3T_MSG_OPC_UPDATE_RSP) {
     LOG(ERROR) << StringPrintf(
-        "Response error: expecting rsp_code %02X, but got %02X",
+        "%s - Response error: expecting rsp_code %02X, but got %02X", __func__,
         T3T_MSG_OPC_UPDATE_RSP, p_t3t_rsp[T3T_MSG_RSP_OFFSET_RSPCODE]);
     nfc_status = NFC_STATUS_FAILED;
   }
@@ -1697,12 +1692,12 @@ static void rw_t3t_handle_get_sc_poll_rsp(tRW_T3T_CB* p_cb, uint8_t nci_status,
     p = &p_sensf_res_buf[RW_T3T_SENSF_RES_RD_OFFSET];
     BE_STREAM_TO_UINT16(sc, p);
 
-    DLOG_IF(INFO, nfc_debug_enabled)
-        << StringPrintf("FeliCa detected (RD, system code %04X)", sc);
+    DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+        "%s - FeliCa detected (RD, system code %04X)", __func__, sc);
     if (p_cb->num_system_codes < T3T_MAX_SYSTEM_CODES) {
       p_cb->system_codes[p_cb->num_system_codes++] = sc;
     } else {
-      LOG(ERROR) << StringPrintf("Exceed T3T_MAX_SYSTEM_CODES!");
+      LOG(ERROR) << StringPrintf("%s - Exceed T3T_MAX_SYSTEM_CODES!", __func__);
       android_errorWriteLog(0x534e4554, "120499324");
     }
   }
@@ -1853,14 +1848,15 @@ static void rw_t3t_handle_fmt_poll_rsp(tRW_T3T_CB* p_cb, uint8_t nci_status,
     /* Tag responded for Felica-Lite poll */
     /* Get MemoryControl block */
     DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-        "Felica-Lite tag detected...getting Memory Control block.");
+        "%s - Felica-Lite tag detected...getting Memory Control block.",
+        __func__);
 
     p_cb->rw_substate = RW_T3T_FMT_SST_CHECK_MC_BLK;
 
     /* Send command to check Memory Configuration block */
     evt_data.status = rw_t3t_check_mc_block(p_cb);
   } else {
-    LOG(ERROR) << StringPrintf("Felica-Lite tag not detected");
+    LOG(ERROR) << StringPrintf("%s - Felica-Lite tag not detected", __func__);
     evt_data.status = NFC_STATUS_FAILED;
   }
 
@@ -1891,8 +1887,9 @@ void rw_t3t_act_handle_fmt_rsp(tRW_T3T_CB* p_cb, NFC_HDR* p_msg_rsp) {
     /* Validate response opcode */
     if (p_t3t_rsp[T3T_MSG_RSP_OFFSET_RSPCODE] != T3T_MSG_OPC_CHECK_RSP) {
       LOG(ERROR) << StringPrintf(
-          "Response error: expecting rsp_code %02X, but got %02X",
-          T3T_MSG_OPC_CHECK_RSP, p_t3t_rsp[T3T_MSG_RSP_OFFSET_RSPCODE]);
+          "%s - Response error: expecting rsp_code %02X, but got %02X",
+          __func__, T3T_MSG_OPC_CHECK_RSP,
+          p_t3t_rsp[T3T_MSG_RSP_OFFSET_RSPCODE]);
       evt_data.status = NFC_STATUS_FAILED;
     }
     /* Validate status code and NFCID2 response from tag */
@@ -1945,9 +1942,10 @@ void rw_t3t_act_handle_fmt_rsp(tRW_T3T_CB* p_cb, NFC_HDR* p_msg_rsp) {
         (p_t3t_rsp[T3T_MSG_RSP_OFFSET_STATUS1] != T3T_MSG_RSP_STATUS_OK))
 
     {
-      LOG(ERROR) << StringPrintf("Response error: rsp_code=%02X, status=%02X",
-                                 p_t3t_rsp[T3T_MSG_RSP_OFFSET_RSPCODE],
-                                 p_t3t_rsp[T3T_MSG_RSP_OFFSET_STATUS1]);
+      LOG(ERROR) << StringPrintf(
+          "%s - Response error: rsp_code=%02X, status=%02X", __func__,
+          p_t3t_rsp[T3T_MSG_RSP_OFFSET_RSPCODE],
+          p_t3t_rsp[T3T_MSG_RSP_OFFSET_STATUS1]);
       evt_data.status = NFC_STATUS_FAILED;
     } else {
       /* SYS_OP=1: ndef already enabled. Just need to update attribute
@@ -1967,9 +1965,10 @@ void rw_t3t_act_handle_fmt_rsp(tRW_T3T_CB* p_cb, NFC_HDR* p_msg_rsp) {
         (p_t3t_rsp[T3T_MSG_RSP_OFFSET_STATUS1] != T3T_MSG_RSP_STATUS_OK))
 
     {
-      LOG(ERROR) << StringPrintf("Response error: rsp_code=%02X, status=%02X",
-                                 p_t3t_rsp[T3T_MSG_RSP_OFFSET_RSPCODE],
-                                 p_t3t_rsp[T3T_MSG_RSP_OFFSET_STATUS1]);
+      LOG(ERROR) << StringPrintf(
+          "%s - Response error: rsp_code=%02X, status=%02X", __func__,
+          p_t3t_rsp[T3T_MSG_RSP_OFFSET_RSPCODE],
+          p_t3t_rsp[T3T_MSG_RSP_OFFSET_STATUS1]);
       evt_data.status = NFC_STATUS_FAILED;
     }
 
@@ -2005,7 +2004,8 @@ static void rw_t3t_handle_sro_poll_rsp(tRW_T3T_CB* p_cb, uint8_t nci_status,
     if (p_cb->ndef_attrib.rwflag != T3T_MSG_NDEF_RWFLAG_RO) {
       /* First update attribute information block */
       DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-          "Felica-Lite tag detected...update NDef attribution block.");
+          "%s - Felica-Lite tag detected...update NDef attribution block.",
+          __func__);
 
       p_cb->rw_substate = RW_T3T_SRO_SST_UPDATE_NDEF_ATTRIB;
 
@@ -2047,14 +2047,15 @@ static void rw_t3t_handle_sro_poll_rsp(tRW_T3T_CB* p_cb, uint8_t nci_status,
     } else if (p_cb->cur_cmd == RW_T3T_CMD_SET_READ_ONLY_HARD) {
       /* NDEF is already read only, Read and update MemoryControl block */
       DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-          "Felica-Lite tag detected...getting Memory Control block.");
+          "%s - Felica-Lite tag detected...getting Memory Control block.",
+          __func__);
       p_cb->rw_substate = RW_T3T_SRO_SST_CHECK_MC_BLK;
 
       /* Send command to check Memory Configuration block */
       evt_data.status = rw_t3t_check_mc_block(p_cb);
     }
   } else {
-    LOG(ERROR) << StringPrintf("Felica-Lite tag not detected");
+    LOG(ERROR) << StringPrintf("%s - Felica-Lite tag not detected", __func__);
     evt_data.status = NFC_STATUS_FAILED;
   }
 
@@ -2086,9 +2087,10 @@ void rw_t3t_act_handle_sro_rsp(tRW_T3T_CB* p_cb, NFC_HDR* p_msg_rsp) {
         (p_t3t_rsp[T3T_MSG_RSP_OFFSET_STATUS1] != T3T_MSG_RSP_STATUS_OK))
 
     {
-      LOG(ERROR) << StringPrintf("Response error: rsp_code=%02X, status=%02X",
-                                 p_t3t_rsp[T3T_MSG_RSP_OFFSET_RSPCODE],
-                                 p_t3t_rsp[T3T_MSG_RSP_OFFSET_STATUS1]);
+      LOG(ERROR) << StringPrintf(
+          "%s - Response error: rsp_code=%02X, status=%02X", __func__,
+          p_t3t_rsp[T3T_MSG_RSP_OFFSET_RSPCODE],
+          p_t3t_rsp[T3T_MSG_RSP_OFFSET_STATUS1]);
       evt_data.status = NFC_STATUS_FAILED;
     } else {
       p_cb->ndef_attrib.rwflag = T3T_MSG_NDEF_RWFLAG_RO;
@@ -2106,8 +2108,9 @@ void rw_t3t_act_handle_sro_rsp(tRW_T3T_CB* p_cb, NFC_HDR* p_msg_rsp) {
      * opcode */
     if (p_t3t_rsp[T3T_MSG_RSP_OFFSET_RSPCODE] != T3T_MSG_OPC_CHECK_RSP) {
       LOG(ERROR) << StringPrintf(
-          "Response error: expecting rsp_code %02X, but got %02X",
-          T3T_MSG_OPC_CHECK_RSP, p_t3t_rsp[T3T_MSG_RSP_OFFSET_RSPCODE]);
+          "%s - Response error: expecting rsp_code %02X, but got %02X",
+          __func__, T3T_MSG_OPC_CHECK_RSP,
+          p_t3t_rsp[T3T_MSG_RSP_OFFSET_RSPCODE]);
       evt_data.status = NFC_STATUS_FAILED;
     }
     /* Validate status code and NFCID2 response from tag */
@@ -2151,9 +2154,10 @@ void rw_t3t_act_handle_sro_rsp(tRW_T3T_CB* p_cb, NFC_HDR* p_msg_rsp) {
         (p_t3t_rsp[T3T_MSG_RSP_OFFSET_STATUS1] != T3T_MSG_RSP_STATUS_OK))
 
     {
-      LOG(ERROR) << StringPrintf("Response error: rsp_code=%02X, status=%02X",
-                                 p_t3t_rsp[T3T_MSG_RSP_OFFSET_RSPCODE],
-                                 p_t3t_rsp[T3T_MSG_RSP_OFFSET_STATUS1]);
+      LOG(ERROR) << StringPrintf(
+          "%s - Response error: rsp_code=%02X, status=%02X", __func__,
+          p_t3t_rsp[T3T_MSG_RSP_OFFSET_RSPCODE],
+          p_t3t_rsp[T3T_MSG_RSP_OFFSET_STATUS1]);
       evt_data.status = NFC_STATUS_FAILED;
     } else {
       rw_t3t_set_readonly_cplt(evt_data.status);
@@ -2203,17 +2207,20 @@ void rw_t3t_data_cback(__attribute__((unused)) uint8_t conn_id,
   /* Sanity check: verify msg len is big enough to contain t3t header */
   else if (p_msg->len < T3T_MSG_RSP_COMMON_HDR_LEN) {
     LOG(ERROR) << StringPrintf(
-        "T3T: invalid Type3 Tag Message (invalid len: %i)", p_msg->len);
+        "%s - T3T: invalid Type3 Tag Message (invalid len: %i)", __func__,
+        p_msg->len);
     free_msg = true;
+
     rw_t3t_process_frame_error();
   } else {
     /* Check for RF frame error */
     p = (uint8_t*)(p_msg + 1) + p_msg->offset;
     sod = p[0];
-
     if (p_msg->len < sod || p[sod] != NCI_STATUS_OK) {
-      LOG(ERROR) << "T3T: rf frame error";
+      LOG(ERROR) << StringPrintf("%s - T3T: rf frame error (crc status=%i)",
+                                 __func__, p[sod]);
       GKI_freebuf(p_msg);
+
       rw_t3t_process_frame_error();
       return;
     }
@@ -2294,8 +2301,9 @@ void rw_t3t_conn_cback(uint8_t conn_id, tNFC_CONN_EVT event,
       break;
 
     case NFC_DATA_CEVT: /* check for status in tNFC_CONN */
-      if ((p_data != nullptr) && ((p_data->data.status == NFC_STATUS_OK) ||
-                               (p_data->data.status == NFC_STATUS_CONTINUE))) {
+      if ((p_data != nullptr) &&
+          ((p_data->data.status == NFC_STATUS_OK) ||
+           (p_data->data.status == NFC_STATUS_CONTINUE))) {
         rw_t3t_data_cback(conn_id, &(p_data->data));
         break;
       } else if (p_data->data.p_data != nullptr) {
@@ -2406,7 +2414,7 @@ static tNFC_STATUS rw_t3t_unselect() {
 #endif /* RW_STATS_INCLUDED */
 
   /* Stop t3t timer (if started) */
-  nfc_stop_quick_timer(&p_cb->timer);
+  nfc_stop_quick_timer(&p_cb->poll_timer);
 
   /* Free cmd buf for retransmissions */
   if (p_cb->p_cur_cmd_buf) {
@@ -2524,8 +2532,8 @@ tNFC_STATUS RW_T3tDetectNDef(void) {
 
   /* Check if we are in valid state to handle this API */
   if (p_cb->rw_state != RW_T3T_STATE_IDLE) {
-    LOG(ERROR) << StringPrintf("Error: invalid state to handle API (0x%x)",
-                               p_cb->rw_state);
+    LOG(ERROR) << StringPrintf("%s - Error: invalid state to handle API (0x%x)",
+                               __func__, p_cb->rw_state);
     return (NFC_STATUS_FAILED);
   }
 
@@ -2577,16 +2585,18 @@ tNFC_STATUS RW_T3tCheckNDef(void) {
 
   /* Check if we are in valid state to handle this API */
   if (p_cb->rw_state != RW_T3T_STATE_IDLE) {
-    LOG(ERROR) << StringPrintf("Error: invalid state to handle API (0x%x)",
-                               p_cb->rw_state);
+    LOG(ERROR) << StringPrintf("%s - Error: invalid state to handle API (0x%x)",
+                               __func__, p_cb->rw_state);
     return (NFC_STATUS_FAILED);
   } else if (p_cb->ndef_attrib.status !=
              NFC_STATUS_OK) /* NDEF detection not performed yet? */
   {
-    LOG(ERROR) << StringPrintf("Error: NDEF detection not performed yet");
+    LOG(ERROR) << StringPrintf("%s - Error: NDEF detection not performed yet",
+                               __func__);
     return (NFC_STATUS_NOT_INITIALIZED);
   } else if (p_cb->ndef_attrib.ln == 0) {
-    LOG(ERROR) << StringPrintf("Type 3 tag contains empty NDEF message");
+    LOG(ERROR) << StringPrintf("%s - Type 3 tag contains empty NDEF message",
+                               __func__);
     return (NFC_STATUS_FAILED);
   }
 
@@ -2633,13 +2643,14 @@ tNFC_STATUS RW_T3tUpdateNDef(uint32_t len, uint8_t* p_data) {
 
   /* Check if we are in valid state to handle this API */
   if (p_cb->rw_state != RW_T3T_STATE_IDLE) {
-    LOG(ERROR) << StringPrintf("Error: invalid state to handle API (0x%x)",
-                               p_cb->rw_state);
+    LOG(ERROR) << StringPrintf("%s - Error: invalid state to handle API (0x%x)",
+                               __func__, p_cb->rw_state);
     return (NFC_STATUS_FAILED);
   } else if (p_cb->ndef_attrib.status !=
              NFC_STATUS_OK) /* NDEF detection not performed yet? */
   {
-    LOG(ERROR) << StringPrintf("Error: NDEF detection not performed yet");
+    LOG(ERROR) << StringPrintf("%s - Error: NDEF detection not performed yet",
+                               __func__);
     return (NFC_STATUS_NOT_INITIALIZED);
   } else if (len > (((uint32_t)p_cb->ndef_attrib.nmaxb) *
                     16)) /* Len exceed's tag's NDEF memory? */
@@ -2693,8 +2704,8 @@ tNFC_STATUS RW_T3tCheck(uint8_t num_blocks, tT3T_BLOCK_DESC* t3t_blocks) {
 
   /* Check if we are in valid state to handle this API */
   if (p_cb->rw_state != RW_T3T_STATE_IDLE) {
-    LOG(ERROR) << StringPrintf("Error: invalid state to handle API (0x%x)",
-                               p_cb->rw_state);
+    LOG(ERROR) << StringPrintf("%s - Error: invalid state to handle API (0x%x)",
+                               __func__, p_cb->rw_state);
     return (NFC_STATUS_FAILED);
   }
 
@@ -2734,8 +2745,8 @@ tNFC_STATUS RW_T3tUpdate(uint8_t num_blocks, tT3T_BLOCK_DESC* t3t_blocks,
 
   /* Check if we are in valid state to handle this API */
   if (p_cb->rw_state != RW_T3T_STATE_IDLE) {
-    LOG(ERROR) << StringPrintf("Error: invalid state to handle API (0x%x)",
-                               p_cb->rw_state);
+    LOG(ERROR) << StringPrintf("%s - Error: invalid state to handle API (0x%x)",
+                               __func__, p_cb->rw_state);
     return (NFC_STATUS_FAILED);
   }
 
@@ -2792,7 +2803,7 @@ tNFC_STATUS RW_T3tPresenceCheck(void) {
     }
   } else {
     /* IDLE state: send POLL command */
-    retval = (tNFC_STATUS)nci_snd_t3t_polling(0xFFFF, T3T_POLL_RC_SC, 0);
+    retval = (tNFC_STATUS)nci_snd_t3t_polling(0xFFFF, T3T_POLL_RC_SC, 0x3);
     if (retval == NCI_STATUS_OK) {
       p_rw_cb->tcb.t3t.flags |= RW_T3T_FL_W4_PRESENCE_CHECK_POLL_RSP;
       p_rw_cb->tcb.t3t.rw_state = RW_T3T_STATE_COMMAND_PENDING;
@@ -2832,8 +2843,8 @@ tNFC_STATUS RW_T3tPoll(uint16_t system_code, tT3T_POLL_RC rc, uint8_t tsn) {
 
   /* Check if we are in valid state to handle this API */
   if (p_cb->rw_state != RW_T3T_STATE_IDLE) {
-    LOG(ERROR) << StringPrintf("Error: invalid state to handle API (0x%x)",
-                               p_cb->rw_state);
+    LOG(ERROR) << StringPrintf("%s - Error: invalid state to handle API (0x%x)",
+                               __func__, p_cb->rw_state);
     return (NFC_STATUS_FAILED);
   }
 
@@ -2842,7 +2853,6 @@ tNFC_STATUS RW_T3tPoll(uint16_t system_code, tT3T_POLL_RC rc, uint8_t tsn) {
     /* start timer for waiting for responses */
     p_cb->cur_poll_rc = rc;
     p_cb->rw_state = RW_T3T_STATE_COMMAND_PENDING;
-    p_cb->flags |= RW_T3T_FL_W4_USER_POLL_RSP;
     rw_t3t_start_poll_timer(p_cb);
   }
 
@@ -2878,8 +2888,8 @@ tNFC_STATUS RW_T3tSendRawFrame(uint16_t len, uint8_t* p_data) {
 
   /* Check if we are in valid state to handle this API */
   if (p_cb->rw_state != RW_T3T_STATE_IDLE) {
-    LOG(ERROR) << StringPrintf("Error: invalid state to handle API (0x%x)",
-                               p_cb->rw_state);
+    LOG(ERROR) << StringPrintf("%s - Error: invalid state to handle API (0x%x)",
+                               __func__, p_cb->rw_state);
     return (NFC_STATUS_FAILED);
   }
 
@@ -2914,8 +2924,8 @@ tNFC_STATUS RW_T3tGetSystemCodes(void) {
 
   /* Check if we are in valid state to handle this API */
   if (p_cb->rw_state != RW_T3T_STATE_IDLE) {
-    LOG(ERROR) << StringPrintf("Error: invalid state to handle API (0x%x)",
-                               p_cb->rw_state);
+    LOG(ERROR) << StringPrintf("%s - Error: invalid state to handle API (0x%x)",
+                               __func__, p_cb->rw_state);
     return (NFC_STATUS_FAILED);
   } else {
     retval = (tNFC_STATUS)nci_snd_t3t_polling(0xFFFF, T3T_POLL_RC_SC, 0);
@@ -2959,8 +2969,8 @@ tNFC_STATUS RW_T3tFormatNDef(void) {
 
   /* Check if we are in valid state to handle this API */
   if (p_cb->rw_state != RW_T3T_STATE_IDLE) {
-    LOG(ERROR) << StringPrintf("Error: invalid state to handle API (0x%x)",
-                               p_cb->rw_state);
+    LOG(ERROR) << StringPrintf("%s - Error: invalid state to handle API (0x%x)",
+                               __func__, p_cb->rw_state);
     return (NFC_STATUS_FAILED);
   } else {
     /* Poll tag, to see if Felica-Lite system is supported */
@@ -3002,19 +3012,20 @@ tNFC_STATUS RW_T3tSetReadOnly(bool b_hard_lock) {
   tRW_DATA evt_data;
 
   DLOG_IF(INFO, nfc_debug_enabled)
-      << StringPrintf("b_hard_lock=%d", b_hard_lock);
+      << StringPrintf("%s - b_hard_lock=%d", __func__, b_hard_lock);
 
   /* Check if we are in valid state to handle this API */
   if (p_cb->rw_state != RW_T3T_STATE_IDLE) {
-    LOG(ERROR) << StringPrintf("Error: invalid state to handle API (0x%x)",
-                               p_cb->rw_state);
+    LOG(ERROR) << StringPrintf("%s - Error: invalid state to handle API (0x%x)",
+                               __func__, p_cb->rw_state);
     return (NFC_STATUS_FAILED);
   }
 
   if (p_cb->ndef_attrib.status !=
       NFC_STATUS_OK) /* NDEF detection not performed yet? */
   {
-    LOG(ERROR) << StringPrintf("Error: NDEF detection not performed yet");
+    LOG(ERROR) << StringPrintf("%s - Error: NDEF detection not performed yet",
+                               __func__);
     return (NFC_STATUS_NOT_INITIALIZED);
   }
 

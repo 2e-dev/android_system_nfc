@@ -64,7 +64,7 @@ typedef struct {
   bool is_sending_data; /* TRUE if llcp_link_check_send_data() is excuting    */
   uint8_t flags;        /* LLCP internal flags                          */
   bool received_first_packet; /* TRUE if a packet has been received from remote
-                                 */
+                               */
   uint8_t agreed_major_version; /* llcp major version used in activated state */
   uint8_t agreed_minor_version; /* llcp minor version used in activated state */
 
@@ -218,10 +218,10 @@ typedef struct {
 typedef struct {
   tLLCP_SDP_CB sdp_cb; /* SDP control block                            */
   tLLCP_LCB lcb;       /* LLCP link control block                      */
-  tLLCP_APP_CB wks_cb[LLCP_MAX_WKS]; /* Application's registration for
-                                        well-known services */
-  tLLCP_APP_CB server_cb
-      [LLCP_MAX_SERVER]; /* Application's registration for SDP services  */
+  tLLCP_APP_CB wks_cb[LLCP_MAX_WKS];       /* Application's registration for
+                                              well-known services */
+  tLLCP_APP_CB server_cb[LLCP_MAX_SERVER]; /* Application's registration for SDP
+                                              services  */
   tLLCP_APP_CB
       client_cb[LLCP_MAX_CLIENT]; /* Application's registration for client */
   tLLCP_DLCB dlcb[LLCP_MAX_DATA_LINK]; /* Data link connection control block */

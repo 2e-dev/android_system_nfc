@@ -126,6 +126,11 @@ void nfc_process_timer_evt(void) {
       case NFC_TTYPE_WAIT_MODE_SET_NTF:
         nfc_mode_set_ntf_timeout();
         break;
+
+      case NFC_TTYPE_DATA_WAIT_CREDIT:
+        nfc_ncif_data_credit_timeout();
+        break;
+
       default:
         DLOG_IF(INFO, nfc_debug_enabled)
             << StringPrintf("nfc_process_timer_evt: timer:0x%p event (0x%04x)",
@@ -273,7 +278,9 @@ void nfc_process_quick_timer_evt(void) {
       case NFC_TTYPE_RW_MFC_RESPONSE:
         rw_mfc_process_timeout(p_tle);
         break;
-
+      case NFC_TTYPE_RW_CI_RESPONSE:
+        rw_ci_process_timeout(p_tle);
+        break;
 #if (NFC_RW_ONLY == FALSE)
       case NFC_TTYPE_CE_T4T_UPDATE:
         ce_t4t_process_timeout(p_tle);
@@ -307,6 +314,11 @@ void nfc_task_shutdown_nfcc(void) {
 
   /* Free any messages still in the mbox */
   while ((p_msg = (NFC_HDR*)GKI_read_mbox(NFC_MBOX_ID)) != nullptr) {
+    GKI_freebuf(p_msg);
+  }
+
+  /* Free any messages still in the mbox */
+  while ((p_msg = (NFC_HDR*)GKI_read_mbox(NFC_MBOX_SLOW_ID)) != nullptr) {
     GKI_freebuf(p_msg);
   }
 
@@ -367,14 +379,18 @@ uint32_t nfc_task(__attribute__((unused)) uint32_t arg) {
       nci_snd_core_reset(NCI_RESET_TYPE_RESET_CFG);
     }
 
-    if (event & NFC_MBOX_EVT_MASK) {
-      /* Process all incoming NCI messages */
-      while ((p_msg = (NFC_HDR*)GKI_read_mbox(NFC_MBOX_ID)) != nullptr) {
+    /* Process all incoming NCI messages */
+    if (event & (NFC_MBOX_EVT_MASK | NFC_MBOX_SLOW_EVT_MASK)) {
+      int halMsgCntLimit = 3;
+      while (((p_msg = (NFC_HDR*)GKI_read_mbox(NFC_MBOX_ID)) != nullptr) ||
+             ((halMsgCntLimit-- > 0) && ((p_msg = (NFC_HDR*)GKI_read_mbox(
+                                              NFC_MBOX_SLOW_ID)) != nullptr))) {
         free_buf = true;
 
         /* Determine the input message type. */
         switch (p_msg->event & NFC_EVT_MASK) {
           case BT_EVT_TO_NFC_NCI:
+
             free_buf = nfc_ncif_process_event(p_msg);
             break;
 

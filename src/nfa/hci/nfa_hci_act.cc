@@ -28,6 +28,7 @@
 #include <log/log.h>
 
 #include "nfa_dm_int.h"
+#include "nfa_ee_int.h"
 #include "nfa_hci_api.h"
 #include "nfa_hci_defs.h"
 #include "nfa_hci_int.h"
@@ -209,7 +210,8 @@ void nfa_hci_check_api_requests(void) {
         break;
 
       default:
-        LOG(ERROR) << StringPrintf("Unknown event: 0x%04x", p_msg->event);
+        LOG(ERROR) << StringPrintf("%s - Unknown event: 0x%04x", __func__,
+                                   p_msg->event);
         break;
     }
 
@@ -326,7 +328,7 @@ void nfa_hci_api_deregister(tNFA_HCI_EVENT_DATA* p_evt_data) {
     }
 
     if (xx == NFA_HCI_MAX_APP_CB) {
-      LOG(WARNING) << StringPrintf("Unknown app: %s",
+      LOG(WARNING) << StringPrintf("%s - Unknown app: %s", __func__,
                                    p_evt_data->app_info.app_name);
       return;
     }
@@ -379,7 +381,7 @@ void nfa_hci_api_deregister(tNFA_HCI_EVENT_DATA* p_evt_data) {
     if (p_cback) p_cback(NFA_HCI_DEREGISTER_EVT, &evt_data);
   } else {
     /* Delete all active pipes created for the application before de registering
-    **/
+     **/
     nfa_hci_cb.hci_state = NFA_HCI_STATE_APP_DEREGISTER;
 
     nfa_hciu_send_delete_pipe_cmd(p_pipe->pipe_id);
@@ -479,8 +481,8 @@ static void nfa_hci_api_alloc_gate(tNFA_HCI_EVENT_DATA* p_evt_data) {
     } else if (p_gate->gate_owner != app_handle) {
       /* Some other app owns the gate */
       p_gate = nullptr;
-      LOG(ERROR) << StringPrintf("The Gate (0X%02x) already taken!",
-                                 p_evt_data->gate_info.gate);
+      LOG(ERROR) << StringPrintf("%s - The Gate (0X%02x) already taken!",
+                                 __func__, p_evt_data->gate_info.gate);
     }
   }
 
@@ -862,7 +864,8 @@ static bool nfa_hci_api_send_cmd(tNFA_HCI_EVENT_DATA* p_evt_data) {
   tNFA_HCI_EVT_DATA evt_data;
   tNFA_HANDLE app_handle;
 
-  if ((p_pipe = nfa_hciu_find_pipe_by_pid(p_evt_data->send_cmd.pipe)) != nullptr) {
+  if ((p_pipe = nfa_hciu_find_pipe_by_pid(p_evt_data->send_cmd.pipe)) !=
+      nullptr) {
     app_handle = nfa_hciu_get_pipe_owner(p_evt_data->send_cmd.pipe);
 
     if ((nfa_hciu_is_active_host(p_pipe->dest_host)) &&
@@ -918,7 +921,8 @@ static void nfa_hci_api_send_rsp(tNFA_HCI_EVENT_DATA* p_evt_data) {
   tNFA_HCI_EVT_DATA evt_data;
   tNFA_HANDLE app_handle;
 
-  if ((p_pipe = nfa_hciu_find_pipe_by_pid(p_evt_data->send_rsp.pipe)) != nullptr) {
+  if ((p_pipe = nfa_hciu_find_pipe_by_pid(p_evt_data->send_rsp.pipe)) !=
+      nullptr) {
     app_handle = nfa_hciu_get_pipe_owner(p_evt_data->send_rsp.pipe);
 
     if ((nfa_hciu_is_active_host(p_pipe->dest_host)) &&
@@ -968,7 +972,8 @@ static bool nfa_hci_api_send_event(tNFA_HCI_EVENT_DATA* p_evt_data) {
   tNFA_HCI_EVT_DATA evt_data;
   tNFA_HANDLE app_handle;
 
-  if ((p_pipe = nfa_hciu_find_pipe_by_pid(p_evt_data->send_evt.pipe)) != nullptr) {
+  if ((p_pipe = nfa_hciu_find_pipe_by_pid(p_evt_data->send_evt.pipe)) !=
+      nullptr) {
     app_handle = nfa_hciu_get_pipe_owner(p_evt_data->send_evt.pipe);
 
     if ((nfa_hciu_is_active_host(p_pipe->dest_host)) &&
@@ -1230,9 +1235,6 @@ void nfa_hci_handle_admin_gate_cmd(uint8_t* p_data) {
           /* If the gate is valid, add the pipe to it  */
           if (nfa_hciu_check_pipe_between_gates(dest_gate, source_host,
                                                 source_gate)) {
-            /* Already, there is a pipe between these two gates, so will reject
-             */
-            response = NFA_HCI_ANY_E_NOK;
           } else {
             response = nfa_hciu_add_pipe_to_gate(pipe, dest_gate, source_host,
                                                  source_gate);
@@ -1264,6 +1266,14 @@ void nfa_hci_handle_admin_gate_cmd(uint8_t* p_data) {
     case NFA_HCI_ADM_NOTIFY_PIPE_DELETED:
       STREAM_TO_UINT8(pipe, p_data);
       response = nfa_hciu_release_pipe(pipe);
+
+      {
+        tNFA_HANDLE pipe_owner = nfa_hciu_get_pipe_owner(pipe);
+        evt_data.deleted.status = NFA_STATUS_OK;
+        evt_data.deleted.pipe = pipe;
+
+        nfa_hciu_send_to_app(NFA_HCI_DELETE_PIPE_EVT, &evt_data, pipe_owner);
+      }
       break;
 
     case NFA_HCI_ADM_NOTIFY_ALL_PIPE_CLEARED:
@@ -1363,8 +1373,9 @@ void nfa_hci_handle_admin_gate_rsp(uint8_t* p_data, uint8_t data_len) {
             nfa_hci_dh_startup_complete();
           if (NFA_GetNCIVersion() == NCI_VERSION_2_0) {
             nfa_hci_cb.hci_state = NFA_HCI_STATE_WAIT_NETWK_ENABLE;
-            NFA_EeGetInfo(&nfa_hci_cb.num_nfcee, nfa_hci_cb.ee_info);
-            nfa_hci_enable_one_nfcee();
+            nfa_hci_cb.w4_hci_netwk_init = false;
+            nfa_hciu_send_get_param_cmd(NFA_HCI_ADMIN_PIPE,
+                                        NFA_HCI_HOST_LIST_INDEX);
           }
         }
         break;
@@ -1400,29 +1411,16 @@ void nfa_hci_handle_admin_gate_rsp(uint8_t* p_data, uint8_t data_len) {
 
           nfa_hci_startup_complete(NFA_STATUS_OK);
         } else if (nfa_hci_cb.param_in_use == NFA_HCI_SESSION_IDENTITY_INDEX) {
-          /* The only parameter we get when initializing is the session ID.
-           * Check for match. */
-          if (data_len >= NFA_HCI_SESSION_ID_LEN &&
-              !memcmp((uint8_t*)nfa_hci_cb.cfg.admin_gate.session_id, p_data,
-                      NFA_HCI_SESSION_ID_LEN)) {
-            /* Session has not changed, Set WHITELIST */
-            nfa_hciu_send_set_param_cmd(
-                NFA_HCI_ADMIN_PIPE, NFA_HCI_WHITELIST_INDEX,
-                p_nfa_hci_cfg->num_whitelist_host, p_nfa_hci_cfg->p_whitelist);
-          } else {
-            /* Something wrong, NVRAM data could be corrupt or first start with
-             * default session id */
-            nfa_hciu_send_clear_all_pipe_cmd();
-            nfa_hci_cb.b_hci_new_sessionId = true;
-            if (data_len < NFA_HCI_SESSION_ID_LEN) {
-              android_errorWriteLog(0x534e4554, "124524315");
-            }
-          }
+          /* Set WHITELIST */
+          nfa_hciu_send_set_param_cmd(
+              NFA_HCI_ADMIN_PIPE, NFA_HCI_WHITELIST_INDEX,
+              p_nfa_hci_cfg->num_whitelist_host, p_nfa_hci_cfg->p_whitelist);
         }
         break;
 
       case NFA_HCI_ANY_OPEN_PIPE:
         nfa_hci_cb.cfg.admin_gate.pipe01_state = NFA_HCI_PIPE_OPENED;
+
         if (nfa_hci_cb.b_hci_netwk_reset) {
           /* Something wrong, NVRAM data could be corrupt or first start with
            * default session id */
@@ -1641,10 +1639,8 @@ void nfa_hci_handle_admin_gate_rsp(uint8_t* p_data, uint8_t data_len) {
 ** Returns          none
 **
 *******************************************************************************/
-void nfa_hci_handle_admin_gate_evt() {
+void nfa_hci_handle_admin_gate_evt(uint8_t* p_data, uint8_t length) {
   tNFA_HCI_EVT_DATA evt_data;
-  tNFA_HCI_API_GET_HOST_LIST* p_msg;
-
   if (nfa_hci_cb.inst != NFA_HCI_EVT_HOT_PLUG) {
     LOG(ERROR) << StringPrintf(
         "nfa_hci_handle_admin_gate_evt - Unknown event on ADMIN Pipe");
@@ -1682,21 +1678,23 @@ void nfa_hci_handle_admin_gate_evt() {
     }
   } else {
     /* Received Hot Plug evt on UICC self reset */
+    evt_data.rcvd_evt.pipe = 0x01;
     evt_data.rcvd_evt.evt_code = nfa_hci_cb.inst;
+    /* NCI 2.0 - Begin */
+    evt_data.rcvd_evt.evt_len = length;
+    /* NCI 2.0 - End */
+    evt_data.rcvd_evt.p_evt_buf = p_data;
+
+    // Call EE API to clear proto info if deconnecting
+    if (evt_data.rcvd_evt.p_evt_buf[1] == 0x00) {  // deconnexion
+      uint8_t hciId = evt_data.rcvd_evt.p_evt_buf[0];
+      nfa_ee_clear_proto_info(hciId);
+    }
+
     /* Notify all registered application with the HOT_PLUG_EVT */
     nfa_hciu_send_to_all_apps(NFA_HCI_EVENT_RCVD_EVT, &evt_data);
 
     /* Send Get Host List after receiving any pending response */
-    p_msg = (tNFA_HCI_API_GET_HOST_LIST*)GKI_getbuf(
-        sizeof(tNFA_HCI_API_GET_HOST_LIST));
-    if (p_msg != nullptr) {
-      p_msg->hdr.event = NFA_HCI_API_GET_HOST_LIST_EVT;
-      /* Set Invalid handle to identify this Get Host List command is internal
-       */
-      p_msg->hci_handle = NFA_HANDLE_INVALID;
-
-      nfa_sys_sendmsg(p_msg);
-    }
   }
 }
 
@@ -2011,11 +2009,18 @@ static void nfa_hci_handle_connectivity_gate_pkt(uint8_t* p_data,
                                                  tNFA_HCI_DYN_PIPE* p_pipe) {
   tNFA_HCI_EVT_DATA evt_data;
 
+  uint8_t msg[1] = {0x00};  // UI availability unknown
+
   if (nfa_hci_cb.type == NFA_HCI_COMMAND_TYPE) {
     switch (nfa_hci_cb.inst) {
       case NFA_HCI_ANY_OPEN_PIPE:
       case NFA_HCI_ANY_CLOSE_PIPE:
         nfa_hci_handle_pipe_open_close_cmd(p_pipe);
+        break;
+
+      case NFA_HCI_ANY_GET_PARAMETER:
+        nfa_hciu_send_msg(p_pipe->pipe_id, NFA_HCI_RESPONSE_TYPE,
+                          NFA_HCI_ANY_OK, sizeof(msg), msg);
         break;
 
       case NFA_HCI_CON_PRO_HOST_REQUEST:

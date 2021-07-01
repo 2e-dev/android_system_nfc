@@ -115,9 +115,10 @@ void rw_t2t_handle_rsp(uint8_t* p_data) {
             rw_t2t_handle_cc_read_rsp();
           } else {
             LOG(WARNING) << StringPrintf(
-                "NDEF Detection failed!, CC[0]: 0x%02x, CC[1]: 0x%02x, CC[3]: "
+                "%s - NDEF Detection failed!, CC[0]: 0x%02x, CC[1]: 0x%02x, "
+                "CC[3]: "
                 "0x%02x",
-                p_t2t->tag_hdr[T2T_CC0_NMN_BYTE],
+                __func__, p_t2t->tag_hdr[T2T_CC0_NMN_BYTE],
                 p_t2t->tag_hdr[T2T_CC1_VNO_BYTE],
                 p_t2t->tag_hdr[T2T_CC3_RWA_BYTE]);
             rw_t2t_ntf_tlv_detect_complete(NFC_STATUS_FAILED);
@@ -727,7 +728,8 @@ static void rw_t2t_handle_tlv_detect_rsp(uint8_t* p_data) {
   /* If not found and not failed, read next block and search tlv */
   if (!found && !failed) {
     if (p_t2t->work_offset >=
-        (p_t2t->tag_hdr[T2T_CC2_TMS_BYTE] * T2T_TMS_TAG_FACTOR + T2T_FIRST_DATA_BLOCK * T2T_BLOCK_LEN)) {
+        (p_t2t->tag_hdr[T2T_CC2_TMS_BYTE] * T2T_TMS_TAG_FACTOR +
+         T2T_FIRST_DATA_BLOCK * T2T_BLOCK_LEN)) {
       if (((tlvtype == TAG_LOCK_CTRL_TLV) && (p_t2t->num_lockbytes > 0)) ||
           ((tlvtype == TAG_MEM_CTRL_TLV) && (p_t2t->num_mem_tlvs > 0))) {
         found = true;
@@ -735,7 +737,8 @@ static void rw_t2t_handle_tlv_detect_rsp(uint8_t* p_data) {
         failed = true;
       }
     } else {
-      if (rw_t2t_read((uint16_t)(p_t2t->work_offset / T2T_BLOCK_LEN) ) != NFC_STATUS_OK)
+      if (rw_t2t_read((uint16_t)(p_t2t->work_offset / T2T_BLOCK_LEN)) !=
+          NFC_STATUS_OK)
         failed = true;
     }
   }
@@ -1923,7 +1926,8 @@ static void rw_t2t_handle_format_tag_rsp(uint8_t* p_data) {
       UINT8_TO_BE_STREAM(p, TAG_NDEF_TLV);
       UINT8_TO_BE_STREAM(p, 0);
 
-      if (((p_ret = t2t_tag_init_data(p_t2t->tag_hdr[0], false, 0)) != nullptr) &&
+      if (((p_ret = t2t_tag_init_data(p_t2t->tag_hdr[0], false, 0)) !=
+           nullptr) &&
           (!p_ret->b_otp)) {
         UINT8_TO_BE_STREAM(p, TAG_TERMINATOR_TLV);
       } else
@@ -2783,7 +2787,8 @@ tNFC_STATUS RW_T2tLocateTlv(uint8_t tlv_type) {
 
   if (p_t2t->state != RW_T2T_STATE_IDLE) {
     LOG(ERROR) << StringPrintf(
-        "Error: Type 2 tag not activated or Busy - State: %u", p_t2t->state);
+        "%s - Error: Type 2 tag not activated or Busy - State: %u", __func__,
+        p_t2t->state);
     return (NFC_STATUS_BUSY);
   }
 
@@ -2908,7 +2913,8 @@ tNFC_STATUS RW_T2tReadNDef(uint8_t* p_buffer, uint16_t buf_len) {
 
   if (p_t2t->state != RW_T2T_STATE_IDLE) {
     LOG(ERROR) << StringPrintf(
-        "Error: Type 2 tag not activated or Busy - State: %u", p_t2t->state);
+        "%s - Error: Type 2 tag not activated or Busy - State: %u", __func__,
+        p_t2t->state);
     return (NFC_STATUS_FAILED);
   }
 
@@ -2986,7 +2992,8 @@ tNFC_STATUS RW_T2tWriteNDef(uint16_t msg_len, uint8_t* p_msg) {
 
   if (p_t2t->state != RW_T2T_STATE_IDLE) {
     LOG(ERROR) << StringPrintf(
-        "Error: Type 2 tag not activated or Busy - State: %u", p_t2t->state);
+        "%s - Error: Type 2 tag not activated or Busy - State: %u", __func__,
+        p_t2t->state);
     return (NFC_STATUS_FAILED);
   }
 

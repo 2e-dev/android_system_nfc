@@ -22,12 +22,11 @@
  *  On the receive side, it routes events to the appropriate handler
  *  (callback). On the transmit side, it manages the command transmission.
  *
-******************************************************************************/
+ ******************************************************************************/
 #include <string.h>
 
 #include <android-base/stringprintf.h>
 #include <base/logging.h>
-#include <log/log.h>
 
 #include "nfc_target.h"
 
@@ -45,14 +44,12 @@ tRW_CB rw_cb;
 
 /*******************************************************************************
 *******************************************************************************/
-void rw_init(void) {
-  memset(&rw_cb, 0, sizeof(tRW_CB));
-}
+void rw_init(void) { memset(&rw_cb, 0, sizeof(tRW_CB)); }
 
 #if (RW_STATS_INCLUDED == TRUE)
 /*******************************************************************************
-* Internal functions for statistics
-*******************************************************************************/
+ * Internal functions for statistics
+ *******************************************************************************/
 /*******************************************************************************
 **
 ** Function         rw_main_reset_stats
@@ -174,11 +171,6 @@ tNFC_STATUS RW_SendRawFrame(uint8_t* p_raw_data, uint16_t data_len) {
   uint8_t* p;
 
   if (rw_cb.p_cback) {
-    if (data_len > GKI_get_pool_bufsize(NFC_RW_POOL_ID) - NCI_MSG_OFFSET_SIZE -
-                       NCI_DATA_HDR_SIZE - 1) {
-      android_errorWriteLog(0x534e4554, "157650117");
-      return NFC_STATUS_FAILED;
-    }
     /* a valid opcode for RW - remove */
     p_data = (NFC_HDR*)GKI_getpoolbuf(NFC_RW_POOL_ID);
     if (p_data) {
@@ -188,7 +180,7 @@ tNFC_STATUS RW_SendRawFrame(uint8_t* p_raw_data, uint16_t data_len) {
       p_data->len = data_len;
 
       DLOG_IF(INFO, nfc_debug_enabled)
-          << StringPrintf("RW SENT raw frame (0x%x)", data_len);
+          << StringPrintf("%s - RW SENT raw frame (0x%x)", __func__, data_len);
       status = NFC_SendData(NFC_RF_CONN_ID, p_data);
     }
   }
@@ -272,6 +264,11 @@ tNFC_STATUS RW_SetActivatedTagType(tNFC_ACTIVATE_DEVT* p_activate_params,
     }
   }
   /* TODO set up callback for proprietary protocol */
+  else if ((NFC_PROTOCOL_UNKNOWN == p_activate_params->protocol) &&
+           (p_activate_params->rf_tech_param.mode ==
+            NFC_DISCOVERY_TYPE_POLL_B)) {
+    status = rw_ci_select();
+  }
   else {
     LOG(ERROR) << StringPrintf("RW_SetActivatedTagType Invalid protocol");
   }

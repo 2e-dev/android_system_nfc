@@ -24,11 +24,15 @@
  ******************************************************************************/
 #include <string.h>
 #include "nfc_target.h"
-
+#include <android-base/stringprintf.h>
+#include <base/logging.h>
 #include "nci_defs.h"
 #include "nci_hmsgs.h"
 #include "nfc_api.h"
 #include "nfc_int.h"
+
+using android::base::StringPrintf;
+extern bool nfc_debug_enabled;
 
 /*******************************************************************************
 **
@@ -436,6 +440,15 @@ uint8_t nci_snd_deactivate_cmd(uint8_t de_act_type) {
   NFC_HDR* p;
   uint8_t* pp;
 
+  if ((de_act_type == NFC_DEACTIVATE_TYPE_IDLE) &&
+      (nfc_cb.flags & NFC_FL_DEACTIVATING)) {
+    nfc_stop_timer(&nfc_cb.deactivate_timer);
+    nfc_cb.flags &= ~NFC_FL_DEACTIVATING;
+    DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+        "%s - Removing deactivate timer as polling was stopped separately",
+        __func__);
+  }
+
   nfc_cb.reassembly = true;
 
   p = NCI_GET_CMD_BUF(NCI_DISCOVER_PARAM_SIZE_DEACT);
@@ -717,6 +730,46 @@ uint8_t nci_snd_get_routing_cmd(void) {
   NCI_MSG_BLD_HDR0(pp, NCI_MT_CMD, NCI_GID_RF_MANAGE);
   NCI_MSG_BLD_HDR1(pp, NCI_MSG_RF_GET_ROUTING);
   UINT8_TO_STREAM(pp, param_size);
+
+  nfc_ncif_send_cmd(p);
+  return (NCI_STATUS_OK);
+}
+
+/*******************************************************************************
+**
+** Function         nci_snd_set_forced_nfcee_routing_cmd
+**
+** Description      Send RF_SET_FORCED_NFCEE_ROUTING_CMD
+**
+** Returns          status
+**
+*******************************************************************************/
+uint8_t nci_snd_set_forced_nfcee_routing_cmd(bool enable, uint8_t nfcee_id,
+                                             uint8_t config) {
+  NFC_HDR* p;
+  uint8_t* pp;
+  uint8_t param_size = 3;
+
+  if ((p = NCI_GET_CMD_BUF(param_size)) == nullptr) return (NCI_STATUS_FAILED);
+
+  if (enable == false) {
+    param_size = 1;
+  }
+
+  p->event = BT_EVT_TO_NFC_NCI;
+  p->len = NCI_MSG_HDR_SIZE + param_size;
+  p->offset = NCI_MSG_OFFSET_SIZE;
+  p->layer_specific = 0;
+  pp = (uint8_t*)(p + 1) + p->offset;
+
+  NCI_MSG_BLD_HDR0(pp, NCI_MT_CMD, NCI_GID_RF_MANAGE);
+  NCI_MSG_BLD_HDR1(pp, NCI_MSG_RF_SET_FORCED_NFCEE_ROUTING);
+  UINT8_TO_STREAM(pp, param_size);
+  UINT8_TO_STREAM(pp, enable);
+  if (param_size == 3) {
+    UINT8_TO_STREAM(pp, nfcee_id);
+    UINT8_TO_STREAM(pp, config);
+  }
 
   nfc_ncif_send_cmd(p);
   return (NCI_STATUS_OK);

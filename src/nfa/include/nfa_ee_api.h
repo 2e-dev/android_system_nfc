@@ -33,6 +33,8 @@
 *****************************************************************************/
 /* 16 per ISO 7816 specification    */
 #define NFA_MAX_AID_LEN NFC_MAX_AID_LEN
+extern uint8_t NFA_REMOVE_ALL_AID[];
+#define NFA_REMOVE_ALL_AID_LEN (0x08)
 
 /* NFA EE callback events */
 enum {
@@ -40,8 +42,11 @@ enum {
   NFA_EE_REGISTER_EVT,   /* The status for NFA_EeRegister () */
   NFA_EE_DEREGISTER_EVT, /* The status for NFA_EeDeregister () */
   NFA_EE_MODE_SET_EVT, /* The status for activating or deactivating an NFCEE */
-  NFA_EE_ADD_AID_EVT,  /* The status for adding an AID to a routing table entry
-                        */
+  NFA_EE_STATUS_NTF_EVT,
+  NFA_EE_POWER_CTRL_EVT,
+  NFA_EE_FORCE_ROUTING_EVT,
+  NFA_EE_ADD_AID_EVT, /* The status for adding an AID to a routing table entry
+                       */
   NFA_EE_REMOVE_AID_EVT,  /* The status for removing an AID from a routing table
                            */
   NFA_EE_ADD_SYSCODE_EVT, /* The status for adding an System Code to a routing
@@ -98,9 +103,16 @@ typedef uint8_t tNFA_EE_PWR_STATE;
 #define NFA_EE_STATUS_ACTIVE NFC_NFCEE_STATUS_ACTIVE
 /* NFCEE removed                */
 #define NFA_EE_STATUS_REMOVED NFC_NFCEE_STATUS_REMOVED
+#define NFA_EE_STATUS_UNRESPONSIVE NFC_NFCEE_STATUS_UNRESPONSIVE
 /* waiting for response from NFCC */
 #define NFA_EE_STATUS_PENDING 0x10
 typedef uint8_t tNFA_EE_STATUS;
+#define NFCEE_STATUS_ERROR 0x00 /* Unrecoverable error    */
+#define NFCEE_STATUS_INIT_STARTED \
+  0x01 /* NFCEE initialization sequence started*/
+#define NFCEE_STATUS_INIT_COMPLETED \
+  0x02 /* NFCEE initialization sequence started*/
+typedef uint8_t tNFA_EE_INIT_STATUS;
 
 /* additional NFCEE Info */
 typedef struct {
@@ -160,11 +172,25 @@ typedef struct {
 } tNFA_EE_MODE_SET;
 
 typedef struct {
-  tNFA_HANDLE ee_handle;          /* Handle of MFCEE      */
-  tNFA_NFC_PROTOCOL la_protocol;  /* Listen A protocol    */
-  tNFA_NFC_PROTOCOL lb_protocol;  /* Listen B protocol    */
-  tNFA_NFC_PROTOCOL lf_protocol;  /* Listen F protocol    */
-  tNFA_NFC_PROTOCOL lbp_protocol; /* Listen B' protocol   */
+  uint8_t nfcee_id;           /* Handle of NFCEE              */
+  tNFA_EE_INIT_STATUS status; /* NFA_STATUS_OK is successful  */
+} tNFA_EE_STATUS_NTF;
+
+typedef struct {
+  uint8_t nfcee_id;           /* Handle of NFCEE              */
+  tNFA_EE_INIT_STATUS status; /* NFA_STATUS_OK is successful  */
+} tNFA_EE_POWER_CTRL_RSP;
+
+typedef struct {
+  tNFA_EE_STATUS status; /* NFA_STATUS_OK is successful  */
+} tNFA_EE_FORCE_ROUTING_RSP;
+
+typedef struct {
+  tNFA_HANDLE ee_handle; /* Handle of MFCEE      */
+  tNFA_PROTOCOL_MASK la_protocol;  /* Listen A protocol    */
+  tNFA_PROTOCOL_MASK lb_protocol;  /* Listen B protocol    */
+  tNFA_PROTOCOL_MASK lf_protocol;  /* Listen F protocol    */
+  tNFA_PROTOCOL_MASK lbp_protocol; /* Listen B' protocol   */
 } tNFA_EE_DISCOVER_INFO;
 
 /* Data for NFA_EE_DISCOVER_REQ_EVT */
@@ -205,6 +231,9 @@ typedef union {
   tNFA_EE_MODE_SET mode_set;
   tNFA_EE_INFO new_ee;
   tNFA_EE_DISCOVER_REQ discover_req;
+  tNFA_EE_STATUS_NTF status_ntf;
+  tNFA_EE_POWER_CTRL_RSP power_ctrl_rsp;
+  tNFA_EE_FORCE_ROUTING_RSP force_routing_rsp;
 } tNFA_EE_CBACK_DATA;
 
 /* EE callback */
@@ -583,5 +612,60 @@ extern tNFA_STATUS NFA_EeSendData(tNFA_HANDLE ee_handle, uint16_t data_len,
 **
 *******************************************************************************/
 extern tNFA_STATUS NFA_EeDisconnect(tNFA_HANDLE ee_handle);
+
+/*******************************************************************************
+**
+** Function         NFA_EePowerCtrl
+**
+** Description
+**
+** Returns          NFA_STATUS_OK if successful
+**
+*******************************************************************************/
+extern tNFA_STATUS NFA_EePowerCtrl(tNFA_HANDLE ee_handle, uint8_t config);
+
+/*******************************************************************************
+**
+** Function         NFA_EeForceRouting
+**
+** Description
+**
+** Returns          NFA_STATUS_OK if successful
+**
+*******************************************************************************/
+extern tNFA_STATUS NFA_EeForceRouting(tNFA_HANDLE ee_handle, uint8_t config);
+
+/*******************************************************************************
+**
+** Function         NFA_EeStopForceRouting
+**
+** Description
+**
+** Returns          NFA_STATUS_OK if successful
+**
+*******************************************************************************/
+extern tNFA_STATUS NFA_EeStopForceRouting();
+
+/*******************************************************************************
+**
+** Function         NFA_EeClearRoutingTable
+**
+** Description
+**
+** Returns          NFA_STATUS_OK if successful
+**
+*******************************************************************************/
+extern tNFA_STATUS NFA_EeClearRoutingTable(bool clear_sc);
+
+/*******************************************************************************
+**
+** Function         NFA_SetBlockingBit
+**
+** Description
+**
+** Returns          NFA_STATUS_OK if successful
+**
+*******************************************************************************/
+extern void NFA_SetBlockingBit(bool block);
 
 #endif /* NFA_EE_API_H */

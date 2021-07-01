@@ -108,7 +108,7 @@
 #define LLCP_WKS_LEN 0x02
 
 /* Well-Known Service Bitmap */
-#define LLCP_WKS_MASK_LM 0x0001  /* Link Management */
+#define LLCP_WKS_MASK_LM 0x0001 /* Link Management */
 
 /* Well-Known Service Access Points */
 #define LLCP_SAP_LM 0x00  /* Link Management */

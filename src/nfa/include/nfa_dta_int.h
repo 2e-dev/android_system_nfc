@@ -48,8 +48,8 @@
 #endif
 
 /*****************************************************************************
-* DTA state machine definitions
-*****************************************************************************/
+ * DTA state machine definitions
+ *****************************************************************************/
 
 typedef struct {
   bool tp_continue;                       /* NFA_DTA_CFG_TP_CONTINUE    */
@@ -61,8 +61,8 @@ typedef struct {
 } tNFA_DTA_CONFIG;
 
 /*****************************************************************************
-* DTA state machine definitions
-*****************************************************************************/
+ * DTA state machine definitions
+ *****************************************************************************/
 /* DTA events */
 enum {
   /* device manager local device API events */
@@ -140,13 +140,11 @@ typedef uint8_t tNFA_DTA_STATE;
 typedef uint8_t tNFA_DTA_SUBSTATE;
 
 /*****************************************************************************
-* DTA control block definitions
-*****************************************************************************/
+ * DTA control block definitions
+ *****************************************************************************/
 
 /* NDEF buffer definitions */
-enum {
-  NFA_DTA_BUF_MAX
-};
+enum { NFA_DTA_BUF_MAX };
 
 typedef struct {
   uint8_t* p_data;
@@ -264,8 +262,8 @@ extern uint8_t* p_nfa_dta_start_up_cfg;
 extern uint8_t nfa_dta_start_up_cfg_len;
 
 /*****************************************************************************
-* DTA internal funciton protoytpes
-*****************************************************************************/
+ * DTA internal funciton protoytpes
+ *****************************************************************************/
 
 extern uint8_t* p_nfa_dta_brcm_start_up_cfg;
 extern uint8_t nfa_dta_brcm_start_up_cfg_len;

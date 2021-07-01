@@ -135,8 +135,9 @@ typedef struct {
   uint8_t gate[NFA_HCI_MAX_GATE_CB]; /* List of generic gates allocated to the
                                         application */
   uint8_t num_uicc_created_pipes;    /* Number of pipes created by UICC host */
-  tNFA_HCI_PIPE_INFO uicc_created_pipe
-      [NFA_HCI_MAX_PIPE_CB]; /* Pipe information of the UICC created pipe */
+  tNFA_HCI_PIPE_INFO
+      uicc_created_pipe[NFA_HCI_MAX_PIPE_CB]; /* Pipe information of the UICC
+                                                 created pipe */
 } tNFA_HCI_GET_GATE_PIPE_LIST;
 
 /* Data for NFA_HCI_ALLOCATE_GATE_EVT */
@@ -156,10 +157,9 @@ typedef struct {
   tNFA_STATUS status; /* Status of creating dynamic pipe for the application */
   uint8_t pipe;       /* The pipe created for the application */
   uint8_t
-      source_gate; /* DH host gate to which the one end of pipe is attached */
-  uint8_t
-      dest_host; /* Destination host whose gate is the other end of the pipe is
-                    attached to */
+      source_gate;   /* DH host gate to which the one end of pipe is attached */
+  uint8_t dest_host; /* Destination host whose gate is the other end of the pipe
+                        is attached to */
   uint8_t dest_gate; /* Destination host gate to which the other end of pipe is
                         attached */
 } tNFA_HCI_CREATE_PIPE;

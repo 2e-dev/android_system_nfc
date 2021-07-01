@@ -182,7 +182,7 @@
 #define T2T_SECTOR_SIZE 1024
 #define T2T_BLOCKS_PER_SECTOR 0x100
 
-#define T2T_UID_LEN 4        /* the len of UID used in T2T tag */
+#define T2T_UID_LEN 4 /* the len of UID used in T2T tag */
 /* the len of Serial number used in T2T tag */
 #define T2T_INTERNAL_BYTES_LEN 2 /* the len of internal used in T2T tag */
 /* Static Lock Bytes */
@@ -226,7 +226,7 @@
 
 /* Type 2 TLV definitions */
 /* May be used for padding. SHALL ignore this */
-#define T2T_TLV_TYPE_LOCK_CTRL 1      /* Defines details of the lock bytes */
+#define T2T_TLV_TYPE_LOCK_CTRL 1 /* Defines details of the lock bytes */
 
 /* Tag len for LOCK_CTRL TLV per spec */
 #define T2T_TLEN_LOCK_CTRL_TLV 3
@@ -274,7 +274,7 @@ typedef struct {
 } tT3T_BLOCK_DESC;
 
 /* Poll RC (request code) definitions */
-#define T3T_POLL_RC_SC 1   /* System code requested in SENSF_RES */
+#define T3T_POLL_RC_SC 1 /* System code requested in SENSF_RES */
 typedef uint8_t tT3T_POLL_RC;
 
 /* Definitions for constructing t3t command messages */
@@ -343,7 +343,6 @@ typedef uint8_t tT3T_POLL_RC;
 
 #define T3T_MSG_RSP_STATUS2_ERROR_MEMORY 0x70
 #define T3T_MSG_RSP_STATUS2_ERROR_PROCESSING 0xFF
-
 
 /* Felica Lite defintions */
 /* Block ID for MC (memory configuration)                       */
@@ -478,7 +477,7 @@ typedef uint8_t tT3T_POLL_RC;
 /* AFI field is present     */
 #define I93_FLAG_AFI_PRESENT 0x10
 
-#define I93_FLAG_SLOT_ONE 0x20  /* 1 slot   */
+#define I93_FLAG_SLOT_ONE 0x20 /* 1 slot   */
 
 /* It shall be set to 0 if not otherwise defined by command */
 /* Meaning is defined by the command description. */
@@ -506,22 +505,22 @@ typedef uint8_t tT3T_POLL_RC;
 #define I93_CMD_STAY_QUIET 0x02 /* Stay Quiet */
 
 /* ISO 15693 Optional commands */
-#define I93_CMD_READ_SINGLE_BLOCK 0x20  /* Read single block     */
-#define I93_CMD_EXT_READ_SINGLE_BLOCK 0x30 /* Extended Read single block */
-#define I93_CMD_WRITE_SINGLE_BLOCK 0x21 /* Write single block    */
+#define I93_CMD_READ_SINGLE_BLOCK 0x20      /* Read single block     */
+#define I93_CMD_EXT_READ_SINGLE_BLOCK 0x30  /* Extended Read single block */
+#define I93_CMD_WRITE_SINGLE_BLOCK 0x21     /* Write single block    */
 #define I93_CMD_EXT_WRITE_SINGLE_BLOCK 0x31 /* Extended Write single block */
-#define I93_CMD_LOCK_BLOCK 0x22         /* Lock block            */
-#define I93_CMD_EXT_LOCK_BLOCK 0x32     /* Extended Lock block            */
-#define I93_CMD_READ_MULTI_BLOCK 0x23   /* Read multiple blocks  */
-#define I93_CMD_EXT_READ_MULTI_BLOCK 0x33 /* Extended Read multiple blocks  */
-#define I93_CMD_WRITE_MULTI_BLOCK 0x24  /* Write multiple blocks */
-#define I93_CMD_EXT_WRITE_MULTI_BLOCK 0x34 /* Write multiple blocks */
-#define I93_CMD_SELECT 0x25             /* Select                */
-#define I93_CMD_RESET_TO_READY 0x26     /* Reset to ready        */
-#define I93_CMD_WRITE_AFI 0x27          /* Wreite AFI            */
-#define I93_CMD_LOCK_AFI 0x28           /* Lock AFI              */
-#define I93_CMD_WRITE_DSFID 0x29        /* Write DSFID           */
-#define I93_CMD_LOCK_DSFID 0x2A         /* Lock DSFID            */
+#define I93_CMD_LOCK_BLOCK 0x22             /* Lock block            */
+#define I93_CMD_EXT_LOCK_BLOCK 0x32         /* Extended Lock block            */
+#define I93_CMD_READ_MULTI_BLOCK 0x23       /* Read multiple blocks  */
+#define I93_CMD_EXT_READ_MULTI_BLOCK 0x33   /* Extended Read multiple blocks  */
+#define I93_CMD_WRITE_MULTI_BLOCK 0x24      /* Write multiple blocks */
+#define I93_CMD_EXT_WRITE_MULTI_BLOCK 0x34  /* Write multiple blocks */
+#define I93_CMD_SELECT 0x25                 /* Select                */
+#define I93_CMD_RESET_TO_READY 0x26         /* Reset to ready        */
+#define I93_CMD_WRITE_AFI 0x27              /* Wreite AFI            */
+#define I93_CMD_LOCK_AFI 0x28               /* Lock AFI              */
+#define I93_CMD_WRITE_DSFID 0x29            /* Write DSFID           */
+#define I93_CMD_LOCK_DSFID 0x2A             /* Lock DSFID            */
 /* Get system information             */
 #define I93_CMD_GET_SYS_INFO 0x2B
 /* Get extended system information    */

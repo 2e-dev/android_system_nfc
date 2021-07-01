@@ -47,6 +47,7 @@
 #define NFC_TTYPE_WAIT_2_DEACTIVATE 1
 #define NFC_WAIT_RSP_RAW_VS 0x02
 #define NFC_TTYPE_WAIT_MODE_SET_NTF 2
+#define NFC_TTYPE_DATA_WAIT_CREDIT 3
 
 #define NFC_TTYPE_LLCP_LINK_MANAGER 100
 #define NFC_TTYPE_LLCP_LINK_INACT 101
@@ -63,6 +64,7 @@
 /* added for p2p prio logic clenaup */
 #define NFC_TTYPE_P2P_PRIO_LOGIC_CLEANUP 111
 #define NFC_TTYPE_RW_MFC_RESPONSE 112
+#define NFC_TTYPE_RW_CI_RESPONSE 113
 /* time out for mode set notification */
 #define NFC_MODE_SET_NTF_TIMEOUT 2
 /* NFC Task event messages */
@@ -180,9 +182,9 @@ typedef struct {
 
   const tNCI_DISCOVER_MAPS*
       p_disc_maps; /* NCI RF Discovery interface mapping */
-  uint8_t vs_interface
-      [NFC_NFCC_MAX_NUM_VS_INTERFACE]; /* the NCI VS interfaces of NFCC    */
-  uint16_t nci_interfaces;             /* the NCI interfaces of NFCC       */
+  uint8_t vs_interface[NFC_NFCC_MAX_NUM_VS_INTERFACE]; /* the NCI VS interfaces
+                                                          of NFCC    */
+  uint16_t nci_interfaces; /* the NCI interfaces of NFCC       */
   uint8_t nci_intf_extensions;
   uint8_t nci_intf_extension_map[NCI_INTERFACE_EXTENSION_MAX];
   uint8_t num_disc_maps; /* number of RF Discovery interface mappings */
@@ -196,9 +198,19 @@ typedef struct {
   TIMER_LIST_ENT deactivate_timer;   /* Timer to wait for deactivation */
 
   tNFC_STATE nfc_state;
-  bool reassembly; /* Reassemble fragmented data pkt */
+  bool reassembly;                      /* Reassemble fragmented data pkt */
   uint8_t last_hdr[NFC_SAVED_HDR_SIZE]; /* part of last NCI command header */
   uint8_t last_cmd[NFC_SAVED_CMD_SIZE]; /* part of last NCI command payload */
+  uint8_t
+      last_nfcee_cmd[NFC_SAVED_CMD_SIZE]; /* part of last NCI command payload */
+  NFC_HDR*
+      p_msg_saved; /* holding last NCI command until receiving the response */
+
+  NFC_HDR* p_hci_data_saved; /* holding last RF data until receiving a
+                                CORE_CONN_CREDIT_NTF */
+  TIMER_LIST_ENT
+  hci_data_wait_credit_timer; /* Timer for waiting for HIC data credits */
+  void* p_restart_cback;      /* the callback function to request NFC restart */
   void* p_vsc_cback;       /* the callback function for last VSC command */
   BUFFER_Q nci_cmd_xmit_q; /* NCI command queue */
   TIMER_LIST_ENT
@@ -227,6 +239,10 @@ typedef struct {
   uint8_t deact_reason;
 
   TIMER_LIST_ENT nci_mode_set_ntf_timer; /*Mode set notification timer*/
+  uint8_t dta_state;
+  uint8_t manu_specific_info[40];
+  uint8_t flag_vs_pipe_info;
+  bool fw_log_overflow;
 
 } tNFC_CB;
 
@@ -256,6 +272,7 @@ extern void nfc_data_event(tNFC_CONN_CB* p_cb);
 
 extern uint8_t nfc_ncif_send_data(tNFC_CONN_CB* p_cb, NFC_HDR* p_data);
 extern void nfc_ncif_cmd_timeout(void);
+extern void nfc_ncif_data_credit_timeout(void);
 extern void nfc_wait_2_deactivate_timeout(void);
 extern void nfc_mode_set_ntf_timeout(void);
 

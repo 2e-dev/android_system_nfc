@@ -41,8 +41,8 @@ typedef struct {
 extern tNFA_PROPRIETARY_CFG* p_nfa_proprietary_cfg;
 
 /**********************************************
-* Proprietary Protocols
-**********************************************/
+ * Proprietary Protocols
+ **********************************************/
 #ifndef NCI_PROTOCOL_18092_ACTIVE
 #define NCI_PROTOCOL_18092_ACTIVE \
   (p_nfa_proprietary_cfg->pro_protocol_18092_active)
@@ -62,10 +62,13 @@ extern tNFA_PROPRIETARY_CFG* p_nfa_proprietary_cfg;
 #ifndef NCI_PROTOCOL_MIFARE
 #define NCI_PROTOCOL_MIFARE (p_nfa_proprietary_cfg->pro_protocol_mfc)
 #endif
+#ifndef NCI_PROTOCOL_CI
+#define NCI_PROTOCOL_CI 0x84
+#endif
 
 /**********************************************
-* Proprietary Discovery technology and mode
-**********************************************/
+ * Proprietary Discovery technology and mode
+ **********************************************/
 #ifndef NCI_DISCOVERY_TYPE_POLL_KOVIO
 #define NCI_DISCOVERY_TYPE_POLL_KOVIO \
   (p_nfa_proprietary_cfg->pro_discovery_kovio_poll)

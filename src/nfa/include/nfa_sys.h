@@ -74,9 +74,9 @@ typedef struct {
 
 /* system manager configuration structure */
 typedef struct {
-  uint16_t mbox_evt;   /* GKI mailbox event */
-  uint8_t mbox;        /* GKI mailbox id */
-  uint8_t timer;       /* GKI timer id */
+  uint16_t mbox_evt; /* GKI mailbox event */
+  uint8_t mbox;      /* GKI mailbox id */
+  uint8_t timer;     /* GKI timer id */
 } tNFA_SYS_CFG;
 
 /*****************************************************************************

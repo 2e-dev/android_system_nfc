@@ -57,7 +57,7 @@ uint8_t ce_test_tag_app_id[T4T_V20_NDEF_TAG_AID_LEN] = {0xD2, 0x76, 0x00, 0x00,
 *******************************************************************************/
 static bool ce_t4t_send_to_lower(NFC_HDR* p_r_apdu) {
   if (NFC_SendData(NFC_RF_CONN_ID, p_r_apdu) != NFC_STATUS_OK) {
-    LOG(ERROR) << StringPrintf("failed");
+    LOG(ERROR) << StringPrintf("%s - failed", __func__);
     return false;
   }
   return true;
@@ -76,12 +76,13 @@ static bool ce_t4t_send_status(uint16_t status) {
   NFC_HDR* p_r_apdu;
   uint8_t* p;
 
-  DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf("Status:0x%04X", status);
+  DLOG_IF(INFO, nfc_debug_enabled)
+      << StringPrintf("%s - Status:0x%04X", __func__, status);
 
   p_r_apdu = (NFC_HDR*)GKI_getpoolbuf(NFC_CE_POOL_ID);
 
   if (!p_r_apdu) {
-    LOG(ERROR) << StringPrintf("Cannot allocate buffer");
+    LOG(ERROR) << StringPrintf("%s - Cannot allocate buffer", __func__);
     return false;
   }
 
@@ -110,10 +111,12 @@ static bool ce_t4t_send_status(uint16_t status) {
 static bool ce_t4t_select_file(uint16_t file_id) {
   tCE_T4T_MEM* p_t4t = &ce_cb.mem.t4t;
 
-  DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf("FileID:0x%04X", file_id);
+  DLOG_IF(INFO, nfc_debug_enabled)
+      << StringPrintf("%s - FileID:0x%04X", __func__, file_id);
 
   if (file_id == T4T_CC_FILE_ID) {
-    DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf("Select CC file");
+    DLOG_IF(INFO, nfc_debug_enabled)
+        << StringPrintf("%s - Select CC file", __func__);
 
     p_t4t->status |= CE_T4T_STATUS_CC_FILE_SELECTED;
     p_t4t->status &= ~(CE_T4T_STATUS_NDEF_SELECTED);
@@ -123,9 +126,9 @@ static bool ce_t4t_select_file(uint16_t file_id) {
 
   if (file_id == CE_T4T_MANDATORY_NDEF_FILE_ID) {
     DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-        "NLEN:0x%04X, MaxFileSize:0x%04X, "
+        "%s - NLEN:0x%04X, MaxFileSize:0x%04X, "
         "WriteAccess:%s",
-        p_t4t->nlen, p_t4t->max_file_size,
+        __func__, p_t4t->nlen, p_t4t->max_file_size,
         (p_t4t->status & CE_T4T_STATUS_NDEF_FILE_READ_ONLY ? "RW" : "RO"));
 
     p_t4t->status |= CE_T4T_STATUS_NDEF_SELECTED;
@@ -133,7 +136,8 @@ static bool ce_t4t_select_file(uint16_t file_id) {
 
     return true;
   } else {
-    LOG(ERROR) << StringPrintf("Cannot find file ID (0x%04X)", file_id);
+    LOG(ERROR) << StringPrintf("%s - Cannot find file ID (0x%04X)", __func__,
+                               file_id);
 
     p_t4t->status &= ~(CE_T4T_STATUS_CC_FILE_SELECTED);
     p_t4t->status &= ~(CE_T4T_STATUS_NDEF_SELECTED);
@@ -157,9 +161,9 @@ static bool ce_t4t_read_binary(uint16_t offset, uint8_t length) {
   NFC_HDR* p_r_apdu;
 
   DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-      "Offset:0x%04X, Length:0x%04X, selected status = "
+      "%s - Offset:0x%04X, Length:0x%04X, selected status = "
       "0x%02X",
-      offset, length, p_t4t->status);
+      __func__, offset, length, p_t4t->status);
 
   if (p_t4t->status & CE_T4T_STATUS_CC_FILE_SELECTED) {
     p_src = p_t4t->cc_file;
@@ -174,7 +178,7 @@ static bool ce_t4t_read_binary(uint16_t offset, uint8_t length) {
     p_r_apdu = (NFC_HDR*)GKI_getpoolbuf(NFC_CE_POOL_ID);
 
     if (!p_r_apdu) {
-      LOG(ERROR) << StringPrintf("Cannot allocate buffer");
+      LOG(ERROR) << StringPrintf("%s - Cannot allocate buffer", __func__);
       return false;
     }
 
@@ -217,7 +221,7 @@ static bool ce_t4t_read_binary(uint16_t offset, uint8_t length) {
     }
     return true;
   } else {
-    LOG(ERROR) << StringPrintf("No selected file");
+    LOG(ERROR) << StringPrintf("%s - No selected file", __func__);
 
     if (!ce_t4t_send_status(T4T_RSP_CMD_NOT_ALLOWED)) {
       return false;
@@ -244,9 +248,9 @@ static bool ce_t4t_update_binary(uint16_t offset, uint8_t length,
   tCE_DATA ce_data;
 
   DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-      "Offset:0x%04X, Length:0x%04X, selected status "
+      "%s - Offset:0x%04X, Length:0x%04X, selected status "
       "= 0x%02X",
-      offset, length, p_t4t->status);
+      __func__, offset, length, p_t4t->status);
 
   starting_offset = offset;
 
@@ -279,7 +283,7 @@ static bool ce_t4t_update_binary(uint16_t offset, uint8_t length,
 
       (*ce_cb.p_cback)(CE_T4T_NDEF_UPDATE_CPLT_EVT, &ce_data);
       DLOG_IF(INFO, nfc_debug_enabled)
-          << StringPrintf("Sent CE_T4T_NDEF_UPDATE_CPLT_EVT");
+          << StringPrintf("%s - Sent CE_T4T_NDEF_UPDATE_CPLT_EVT", __func__);
     }
 
     p_t4t->status &= ~(CE_T4T_STATUS_NDEF_FILE_UPDATING);
@@ -318,7 +322,8 @@ static void ce_t4t_set_version_in_cc(uint8_t version) {
   tCE_T4T_MEM* p_t4t = &ce_cb.mem.t4t;
   uint8_t* p;
 
-  DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf("version = 0x%02X", version);
+  DLOG_IF(INFO, nfc_debug_enabled)
+      << StringPrintf("%s - version = 0x%02X", __func__, version);
 
   p = p_t4t->cc_file + T4T_VERSION_OFFSET_IN_CC;
 
@@ -434,9 +439,9 @@ static void ce_t4t_process_select_app_cmd(uint8_t* p_cmd, NFC_HDR* p_c_apdu) {
     ce_cb.mem.t4t.status |= CE_T4T_STATUS_REG_AID_SELECTED;
 
     DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-        "Registered AID[%02X%02X%02X%02X...] "
+        "%s - Registered AID[%02X%02X%02X%02X...] "
         "is selected",
-        ce_cb.mem.t4t.reg_aid[ce_cb.mem.t4t.selected_aid_idx].aid[0],
+        __func__, ce_cb.mem.t4t.reg_aid[ce_cb.mem.t4t.selected_aid_idx].aid[0],
         ce_cb.mem.t4t.reg_aid[ce_cb.mem.t4t.selected_aid_idx].aid[1],
         ce_cb.mem.t4t.reg_aid[ce_cb.mem.t4t.selected_aid_idx].aid[2],
         ce_cb.mem.t4t.reg_aid[ce_cb.mem.t4t.selected_aid_idx].aid[3]);
@@ -462,7 +467,8 @@ static void ce_t4t_process_select_app_cmd(uint8_t* p_cmd, NFC_HDR* p_c_apdu) {
       ce_t4t_set_version_in_cc(T4T_VERSION_2_0);
       status_words = T4T_RSP_CMD_CMPLTED;
     } else {
-      DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf("Not found matched AID");
+      DLOG_IF(INFO, nfc_debug_enabled)
+          << StringPrintf("%s - Not found matched AID", __func__);
       status_words = T4T_RSP_NOT_FOUND;
     }
   } else if (ce_cb.mem.t4t.p_wildcard_aid_cback) {
@@ -478,7 +484,8 @@ static void ce_t4t_process_select_app_cmd(uint8_t* p_cmd, NFC_HDR* p_c_apdu) {
     p_c_apdu = nullptr;
 
     DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-        "CET4T: Forward raw frame (SELECT APP) to wildcard AID handler");
+        "%s - CET4T: Forward raw frame (SELECT APP) to wildcard AID handler",
+        __func__);
     (*(ce_cb.mem.t4t.p_wildcard_aid_cback))(CE_T4T_RAW_FRAME_EVT, &ce_data);
   } else {
     DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
@@ -496,7 +503,8 @@ static void ce_t4t_process_select_app_cmd(uint8_t* p_cmd, NFC_HDR* p_c_apdu) {
       ce_cb.mem.t4t.status &= ~(CE_T4T_STATUS_WILDCARD_AID_SELECTED);
       ce_cb.mem.t4t.status |= CE_T4T_STATUS_T4T_APP_SELECTED;
 
-      DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf("T4T CE App selected");
+      DLOG_IF(INFO, nfc_debug_enabled)
+          << StringPrintf("%s - T4T CE App selected", __func__);
     }
 
     ce_t4t_send_status(status_words);
@@ -520,7 +528,8 @@ void ce_t4t_process_timeout(TIMER_LIST_ENT* p_tle) {
   tCE_T4T_MEM* p_t4t = &ce_cb.mem.t4t;
   tCE_DATA ce_data;
 
-  DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf("event=%d", p_tle->event);
+  DLOG_IF(INFO, nfc_debug_enabled)
+      << StringPrintf("%s - event=%d", __func__, p_tle->event);
 
   if (p_tle->event == NFC_TTYPE_CE_T4T_UPDATE) {
     if (p_t4t->status & CE_T4T_STATUS_NDEF_FILE_UPDATING) {
@@ -532,7 +541,7 @@ void ce_t4t_process_timeout(TIMER_LIST_ENT* p_tle) {
       p_t4t->status &= ~(CE_T4T_STATUS_NDEF_FILE_UPDATING);
     }
   } else {
-    LOG(ERROR) << StringPrintf("unknown event=%d", p_tle->event);
+    LOG(ERROR) << StringPrintf("%s - unknown event=%d", __func__, p_tle->event);
   }
 }
 
@@ -567,12 +576,14 @@ static void ce_t4t_data_cback(uint8_t conn_id, tNFC_CONN_EVT event,
     return;
   }
 
-  DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf("conn_id = 0x%02X", conn_id);
+  DLOG_IF(INFO, nfc_debug_enabled)
+      << StringPrintf("%s - conn_id = 0x%02X", __func__, conn_id);
 
   p_cmd = (uint8_t*)(p_c_apdu + 1) + p_c_apdu->offset;
 
   if (p_c_apdu->len == 0) {
-    LOG(ERROR) << StringPrintf("Wrong length in ce_t4t_data_cback");
+    LOG(ERROR) << StringPrintf("%s - Wrong length in ce_t4t_data_cback",
+                               __func__);
     android_errorWriteLog(0x534e4554, "115635871");
     ce_t4t_send_status(T4T_RSP_WRONG_LENGTH);
     GKI_freebuf(p_c_apdu);
@@ -606,7 +617,8 @@ static void ce_t4t_data_cback(uint8_t conn_id, tNFC_CONN_EVT event,
           ce_t4t_process_select_app_cmd(p_cmd, p_c_apdu);
           return;
         } else {
-          LOG(ERROR) << StringPrintf("Wrong length in select app cmd");
+          LOG(ERROR) << StringPrintf("%s - Wrong length in select app cmd",
+                                     __func__);
           android_errorWriteLog(0x534e4554, "115635871");
           ce_t4t_send_status(T4T_RSP_NOT_FOUND);
           GKI_freebuf(p_c_apdu);
@@ -618,8 +630,8 @@ static void ce_t4t_data_cback(uint8_t conn_id, tNFC_CONN_EVT event,
 
   /* if registered AID is selected */
   if (ce_cb.mem.t4t.status & CE_T4T_STATUS_REG_AID_SELECTED) {
-    DLOG_IF(INFO, nfc_debug_enabled)
-        << StringPrintf("CET4T: Forward raw frame to registered AID");
+    DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+        "%s - CET4T: Forward raw frame to registered AID", __func__);
 
     /* forward raw frame to upper layer */
     if (ce_cb.mem.t4t.selected_aid_idx < CE_T4T_MAX_REG_AID) {
@@ -635,8 +647,8 @@ static void ce_t4t_data_cback(uint8_t conn_id, tNFC_CONN_EVT event,
       ce_t4t_send_status(T4T_RSP_NOT_FOUND);
     }
   } else if (ce_cb.mem.t4t.status & CE_T4T_STATUS_WILDCARD_AID_SELECTED) {
-    DLOG_IF(INFO, nfc_debug_enabled)
-        << StringPrintf("CET4T: Forward raw frame to wildcard AID handler");
+    DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+        "%s - CET4T: Forward raw frame to wildcard AID handler", __func__);
 
     /* forward raw frame to upper layer */
     ce_data.raw_frame.status = p_data->data.status;
@@ -658,7 +670,8 @@ static void ce_t4t_data_cback(uint8_t conn_id, tNFC_CONN_EVT event,
         }
         ce_t4t_process_select_file_cmd(p_cmd);
       } else {
-        LOG(ERROR) << StringPrintf("CET4T: Bad P1 byte (0x%02X)", select_type);
+        LOG(ERROR) << StringPrintf("%s - CET4T: Bad P1 byte (0x%02X)", __func__,
+                                   select_type);
         ce_t4t_send_status(T4T_RSP_WRONG_PARAMS);
       }
     } else if (instruct == T4T_CMD_INS_READ_BINARY) {
@@ -690,19 +703,20 @@ static void ce_t4t_data_cback(uint8_t conn_id, tNFC_CONN_EVT event,
               length = (uint8_t)(max_file_size - offset);
 
               DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-                  "CET4T: length is reduced to %d by max_file_size (%d)",
-                  length, max_file_size);
+                  "%s - CET4T: length is reduced to %d by max_file_size (%d)",
+                  __func__, length, max_file_size);
             } else {
               LOG(ERROR) << StringPrintf(
-                  "CET4T: offset (%d) must be less than max_file_size (%d)",
-                  offset, max_file_size);
+                  "%s - CET4T: offset (%d) must be less than max_file_size "
+                  "(%d)",
+                  __func__, offset, max_file_size);
               length = 0;
             }
           }
         } else {
           LOG(ERROR) << StringPrintf(
-              "CET4T: length (%d) must be less than MLe (%zu)", length,
-              CE_T4T_MAX_LE);
+              "%s - CET4T: length (%d) must be less than MLe (%zu)", __func__,
+              length, CE_T4T_MAX_LE);
           length = 0;
         }
 
@@ -711,12 +725,13 @@ static void ce_t4t_data_cback(uint8_t conn_id, tNFC_CONN_EVT event,
         else
           ce_t4t_send_status(T4T_RSP_WRONG_PARAMS);
       } else {
-        LOG(ERROR) << StringPrintf("CET4T: File has not been selected");
+        LOG(ERROR) << StringPrintf("%s - CET4T: File has not been selected",
+                                   __func__);
         ce_t4t_send_status(T4T_RSP_CMD_NOT_ALLOWED);
       }
     } else if (instruct == T4T_CMD_INS_UPDATE_BINARY) {
       if (ce_cb.mem.t4t.status & CE_T4T_STATUS_NDEF_FILE_READ_ONLY) {
-        LOG(ERROR) << StringPrintf("CET4T: No access right");
+        LOG(ERROR) << StringPrintf("%s - CET4T: No access right", __func__);
         ce_t4t_send_status(T4T_RSP_CMD_NOT_ALLOWED);
       } else if (ce_cb.mem.t4t.status & CE_T4T_STATUS_NDEF_SELECTED) {
         /*CLA+INS+Offset(P1P2)+Lc = 5 bytes*/
@@ -731,21 +746,18 @@ static void ce_t4t_data_cback(uint8_t conn_id, tNFC_CONN_EVT event,
         BE_STREAM_TO_UINT8(length, p_cmd);  /* Lc     */
 
         /* check if valid parameters */
-        if ((uint32_t)length <= CE_T4T_MAX_LC &&
-            /* check if data fits into the apdu */
-            (uint16_t)length <= p_c_apdu->len - T4T_CMD_MAX_HDR_SIZE) {
+        if ((uint32_t)length <= CE_T4T_MAX_LC) {
           if (length + offset > ce_cb.mem.t4t.max_file_size) {
             LOG(ERROR) << StringPrintf(
-                "CET4T: length (%d) + offset (%d) must be less than "
+                "%s - CET4T: length (%d) + offset (%d) must be less than "
                 "max_file_size (%d)",
-                length, offset, ce_cb.mem.t4t.max_file_size);
+                __func__, length, offset, ce_cb.mem.t4t.max_file_size);
             length = 0;
           }
         } else {
           LOG(ERROR) << StringPrintf(
-              "CET4T: length (%d) must be less than MLc (%zu)", length,
-              CE_T4T_MAX_LC);
-          android_errorWriteLog(0x534e4554, "157649298");
+              "%s - CET4T: length (%d) must be less than MLc (%zu)", __func__,
+              length, CE_T4T_MAX_LC);
           length = 0;
         }
 
@@ -754,16 +766,19 @@ static void ce_t4t_data_cback(uint8_t conn_id, tNFC_CONN_EVT event,
         else
           ce_t4t_send_status(T4T_RSP_WRONG_PARAMS);
       } else {
-        LOG(ERROR) << StringPrintf("CET4T: NDEF File has not been selected");
+        LOG(ERROR) << StringPrintf(
+            "%s - CET4T: NDEF File has not been selected", __func__);
         ce_t4t_send_status(T4T_RSP_CMD_NOT_ALLOWED);
       }
     } else {
-      LOG(ERROR) << StringPrintf("CET4T: Unsupported Instruction byte (0x%02X)",
-                                 instruct);
+      LOG(ERROR) << StringPrintf(
+          "%s - CET4T: Unsupported Instruction byte (0x%02X)", __func__,
+          instruct);
       ce_t4t_send_status(T4T_RSP_INSTR_NOT_SUPPORTED);
     }
   } else {
-    LOG(ERROR) << StringPrintf("CET4T: Application has not been selected");
+    LOG(ERROR) << StringPrintf("%s - CET4T: Application has not been selected",
+                               __func__);
     ce_t4t_send_status(T4T_RSP_CMD_NOT_ALLOWED);
   }
 
@@ -822,20 +837,22 @@ tNFC_STATUS CE_T4tSetLocalNDEFMsg(bool read_only, uint16_t ndef_msg_max,
   uint8_t* p;
 
   DLOG_IF(INFO, nfc_debug_enabled)
-      << StringPrintf("read_only=%d, ndef_msg_max=%d, ndef_msg_len=%d",
-                      read_only, ndef_msg_max, ndef_msg_len);
+      << StringPrintf("%s - read_only=%d, ndef_msg_max=%d, ndef_msg_len=%d",
+                      __func__, read_only, ndef_msg_max, ndef_msg_len);
 
   if (!p_ndef_msg) {
     p_t4t->p_ndef_msg = nullptr;
 
-    DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf("T4T is disabled");
+    DLOG_IF(INFO, nfc_debug_enabled)
+        << StringPrintf("%s - T4T is disabled", __func__);
     return NFC_STATUS_OK;
   }
 
   if ((!read_only) && (!p_scratch_buf)) {
     LOG(ERROR) << StringPrintf(
-        "p_scratch_buf cannot be NULL if not "
-        "read-only");
+        "%s - p_scratch_buf cannot be NULL if not "
+        "read-only",
+        __func__);
     return NFC_STATUS_FAILED;
   }
 
@@ -903,43 +920,45 @@ tCE_T4T_AID_HANDLE CE_T4tRegisterAID(uint8_t aid_len, uint8_t* p_aid,
 
   /* Handle registering callback for wildcard AID (all AIDs) */
   if (aid_len == 0) {
-    DLOG_IF(INFO, nfc_debug_enabled)
-        << StringPrintf("registering callback for wildcard AID ");
+    DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+        "%s - registering callback for wildcard AID ", __func__);
 
     /* Check if a wildcard callback is already registered (only one is allowed)
      */
     if (p_t4t->p_wildcard_aid_cback != nullptr) {
       LOG(ERROR) << StringPrintf(
-          "only one wildcard AID can be registered at "
-          "time.");
+          "%s - only one wildcard AID can be registered at "
+          "time.",
+          __func__);
       return CE_T4T_AID_HANDLE_INVALID;
     }
 
     DLOG_IF(INFO, nfc_debug_enabled)
-        << StringPrintf("handle 0x%02x registered (for wildcard AID)",
-                        CE_T4T_WILDCARD_AID_HANDLE);
+        << StringPrintf("%s - handle 0x%02x registered (for wildcard AID)",
+                        __func__, CE_T4T_WILDCARD_AID_HANDLE);
     p_t4t->p_wildcard_aid_cback = p_cback;
     return CE_T4T_WILDCARD_AID_HANDLE;
   }
 
-  DLOG_IF(INFO, nfc_debug_enabled)
-      << StringPrintf("AID [%02X%02X%02X%02X...], %d bytes", *p_aid,
-                      *(p_aid + 1), *(p_aid + 2), *(p_aid + 3), aid_len);
+  DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+      "%s - AID [%02X%02X%02X%02X...], %d bytes", __func__, *p_aid,
+      *(p_aid + 1), *(p_aid + 2), *(p_aid + 3), aid_len);
 
   if (aid_len > NFC_MAX_AID_LEN) {
-    LOG(ERROR) << StringPrintf("AID is up to %d bytes", NFC_MAX_AID_LEN);
+    LOG(ERROR) << StringPrintf("%s - AID is up to %d bytes", __func__,
+                               NFC_MAX_AID_LEN);
     return CE_T4T_AID_HANDLE_INVALID;
   }
 
   if (p_cback == nullptr) {
-    LOG(ERROR) << StringPrintf("callback must be provided");
+    LOG(ERROR) << StringPrintf("%s - callback must be provided", __func__);
     return CE_T4T_AID_HANDLE_INVALID;
   }
 
   for (xx = 0; xx < CE_T4T_MAX_REG_AID; xx++) {
     if ((p_t4t->reg_aid[xx].aid_len == aid_len) &&
         (!(memcmp(p_t4t->reg_aid[xx].aid, p_aid, aid_len)))) {
-      LOG(ERROR) << StringPrintf("already registered");
+      LOG(ERROR) << StringPrintf("%s - already registered", __func__);
       return CE_T4T_AID_HANDLE_INVALID;
     }
   }
@@ -954,11 +973,11 @@ tCE_T4T_AID_HANDLE CE_T4tRegisterAID(uint8_t aid_len, uint8_t* p_aid,
   }
 
   if (xx >= CE_T4T_MAX_REG_AID) {
-    LOG(ERROR) << StringPrintf("No resource");
+    LOG(ERROR) << StringPrintf("%s - No resource", __func__);
     return CE_T4T_AID_HANDLE_INVALID;
   } else {
     DLOG_IF(INFO, nfc_debug_enabled)
-        << StringPrintf("handle 0x%02x registered", xx);
+        << StringPrintf("%s - handle 0x%02x registered", __func__, xx);
   }
 
   return (xx);

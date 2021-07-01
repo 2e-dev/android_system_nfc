@@ -74,7 +74,7 @@ tNFC_STATUS NFC_NfceeDiscover(bool discover) {
 tNFC_STATUS NFC_NfceeModeSet(uint8_t nfcee_id, tNFC_NFCEE_MODE mode) {
   tNFC_STATUS status = NCI_STATUS_OK;
   if (mode >= NCI_NUM_NFCEE_MODE || nfcee_id == NCI_DH_ID) {
-    LOG(ERROR) << StringPrintf("%s invalid parameter:%d", __func__, mode);
+    LOG(ERROR) << StringPrintf("%s - invalid parameter:%d", __func__, mode);
     return NFC_STATUS_FAILED;
   }
   if (nfc_cb.nci_version != NCI_VERSION_2_0)
@@ -153,4 +153,21 @@ tNFC_STATUS NFC_GetRouting(void) { return nci_snd_get_routing_cmd(); }
 tNFC_STATUS NFC_NfceePLConfig(uint8_t nfcee_id,
                               tNCI_NFCEE_PL_CONFIG pl_config) {
   return nci_snd_nfcee_power_link_control(nfcee_id, pl_config);
+}
+
+/*******************************************************************************
+**
+** Function         NFC_SetForcedNfceeRouting
+**
+** Description      This function is called to force the CE routing table from
+**                  NFCC. The response from NFCC is reported by
+*tNFC_RESPONSE_CBACK
+**                  as NFC_NFCEE_FORCE_ROUTING_REVT.
+**
+** Returns          tNFC_STATUS
+**
+*******************************************************************************/
+tNFC_STATUS NFC_SetForcedNfceeRouting(bool enable, uint8_t nfcee_id,
+                                      uint8_t config) {
+  return nci_snd_set_forced_nfcee_routing_cmd(enable, nfcee_id, config);
 }

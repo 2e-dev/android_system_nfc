@@ -87,9 +87,9 @@ void llcp_init(void) {
       (uint8_t)((llcp_cb.num_rx_buff * LLCP_LL_RX_BUFF_LIMIT) / 100);
 
   DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
-      "num_rx_buff = %d, rx_congest_start = %d, rx_congest_end = %d, "
+      "%s - num_rx_buff = %d, rx_congest_start = %d, rx_congest_end = %d, "
       "max_num_ll_rx_buff = %d",
-      llcp_cb.num_rx_buff, llcp_cb.overall_rx_congest_start,
+      __func__, llcp_cb.num_rx_buff, llcp_cb.overall_rx_congest_start,
       llcp_cb.overall_rx_congest_end, llcp_cb.max_num_ll_rx_buff);
 
   /* max number of buffers for transmitting data */
@@ -99,9 +99,9 @@ void llcp_init(void) {
   llcp_cb.max_num_ll_tx_buff =
       (uint8_t)((llcp_cb.max_num_tx_buff * LLCP_LL_TX_BUFF_LIMIT) / 100);
 
-  DLOG_IF(INFO, nfc_debug_enabled)
-      << StringPrintf("max_num_tx_buff = %d, max_num_ll_tx_buff = %d",
-                      llcp_cb.max_num_tx_buff, llcp_cb.max_num_ll_tx_buff);
+  DLOG_IF(INFO, nfc_debug_enabled) << StringPrintf(
+      "%s - max_num_tx_buff = %d, max_num_ll_tx_buff = %d", __func__,
+      llcp_cb.max_num_tx_buff, llcp_cb.max_num_ll_tx_buff);
 
   llcp_cb.ll_tx_uncongest_ntf_start_sap = LLCP_SAP_SDP + 1;
 

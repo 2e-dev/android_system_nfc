@@ -59,9 +59,22 @@
 #define NFA_STATUS_INVALID_PARAM NCI_STATUS_INVALID_PARAM
 /* Already started      */
 #define NFA_STATUS_ALREADY_STARTED NCI_STATUS_ALREADY_STARTED
+/* RF frame error       */
+#define NFA_STATUS_RF_FRAME_CORRUPTED NCI_STATUS_RF_FRAME_CORRUPTED
+/* RF transmission error*/
+#define NFA_STATUS_RF_TRANSMISSION_ERR NCI_STATUS_RF_TRANSMISSION_ERR
+/* RF protocol error    */
+#define NFA_STATUS_RF_PROTOCOL_ERR NCI_STATUS_RF_PROTOCOL_ERR
+/* Unexpected data    */
+#define NFA_STATUS_RF_UNEXPECTED_DATA NCI_STATUS_RF_UNEXPECTED_DATA
 /* RF Timeout           */
 #define NFA_STATUS_TIMEOUT NCI_STATUS_TIMEOUT
 
+/* Command started successfully */
+#define NFA_STATUS_CMD_STARTED NFC_STATUS_CMD_STARTED
+#define NFA_STATUS_CONTINUE NFC_STATUS_CONTINUE
+/* 7816 Status Word is not command complete(0x9000) */
+#define NFA_STATUS_CMD_NOT_CMPLTD NFC_STATUS_CMD_NOT_CMPLTD
 /* Out of GKI buffers */
 #define NFA_STATUS_NO_BUFFERS NFC_STATUS_NO_BUFFERS
 /* Protocol mismatch between API and activated one */
@@ -75,6 +88,7 @@
 #define NFA_STATUS_BAD_HANDLE NFC_STATUS_BAD_HANDLE
 /* congested                                        */
 #define NFA_STATUS_CONGESTED NFC_STATUS_CONGESTED
+
 typedef uint8_t tNFA_STATUS;
 
 /* Handle for NFA registrations and connections */
@@ -101,13 +115,13 @@ typedef uint16_t tNFA_HANDLE;
 typedef uint8_t tNFA_PMID;
 
 /* Definitions for tNFA_TECHNOLOGY_MASK */
-#define NFA_TECHNOLOGY_MASK_A 0x01        /* NFC Technology A             */
-#define NFA_TECHNOLOGY_MASK_B 0x02        /* NFC Technology B             */
-#define NFA_TECHNOLOGY_MASK_F 0x04        /* NFC Technology F             */
+#define NFA_TECHNOLOGY_MASK_A 0x01 /* NFC Technology A             */
+#define NFA_TECHNOLOGY_MASK_B 0x02 /* NFC Technology B             */
+#define NFA_TECHNOLOGY_MASK_F 0x04 /* NFC Technology F             */
 /* TECHNOLOGY_MASK_V in NCI2.0 and TECHNOLOGY_MASK_15693 proprietary in NCI1.0*/
 #define NFA_TECHNOLOGY_MASK_V 0x08
-#define NFA_TECHNOLOGY_MASK_B_PRIME 0x10  /* Proprietary Technology       */
-#define NFA_TECHNOLOGY_MASK_KOVIO 0x20    /* Proprietary Technology       */
+#define NFA_TECHNOLOGY_MASK_B_PRIME 0x10 /* Proprietary Technology       */
+#define NFA_TECHNOLOGY_MASK_KOVIO 0x20   /* Proprietary Technology       */
 /* NFC technology NFC-DEP protocol active mode */
 #define NFA_TECHNOLOGY_MASK_ACTIVE 0x40
 /* NFC Technology A active mode */
@@ -130,6 +144,8 @@ typedef uint8_t tNFA_TECHNOLOGY_MASK;
 #define NFA_PROTOCOL_NFC_DEP NFC_PROTOCOL_NFC_DEP
 /* NFC_PROTOCOL_T5T in NCI2.0 and NFC_PROTOCOL_ISO15693 proprietary in NCI1.0*/
 #define NFA_PROTOCOL_T5T NFC_PROTOCOL_T5T
+#define NFA_PROTOCOL_CI NFC_PROTOCOL_CI
+#define NFA_PROTOCOL_MIFARE NFC_PROTOCOL_MIFARE
 #define NFA_PROTOCOL_INVALID 0xFF
 typedef uint8_t tNFA_NFC_PROTOCOL;
 
@@ -187,9 +203,9 @@ typedef struct {
 
 /* Data for NFA_DM_GET_CONFIG_EVT */
 typedef struct {
-  tNFA_STATUS status;    /* NFA_STATUS_OK if successful              */
-  uint16_t tlv_size;     /* The length of TLV                        */
-  uint8_t* param_tlvs;   /* TLV (Parameter ID-Len-Value byte stream) */
+  tNFA_STATUS status;  /* NFA_STATUS_OK if successful              */
+  uint16_t tlv_size;   /* The length of TLV                        */
+  uint8_t* param_tlvs; /* TLV (Parameter ID-Len-Value byte stream) */
 } tNFA_GET_CONFIG;
 
 /* Structure to store screen state */
@@ -239,14 +255,20 @@ typedef struct {
   uint8_t power_state; /* current screen/power state */
 } tNFA_DM_POWER_STATE;
 
+typedef struct {
+  tNFA_STATUS status;
+  uint8_t manu_specific_info[40];
+} tNFA_ENABLE;
+
 /* Union of all DM callback structures */
 typedef union {
-  tNFA_STATUS status;                 /* NFA_DM_ENABLE_EVT        */
-  tNFA_SET_CONFIG set_config;         /* NFA_DM_SET_CONFIG_EVT    */
-  tNFA_GET_CONFIG get_config;         /* NFA_DM_GET_CONFIG_EVT    */
-  tNFA_DM_PWR_MODE_CHANGE power_mode; /* NFA_DM_PWR_MODE_CHANGE_EVT   */
-  tNFA_DM_RF_FIELD rf_field;          /* NFA_DM_RF_FIELD_EVT      */
-  void* p_vs_evt_data;                /* Vendor-specific evt data */
+  tNFA_STATUS status; /* NFA_DM_ENABLE_EVT        */
+  tNFA_ENABLE enable; /* NFA_DM_ENABLE_EVT        */
+  tNFA_SET_CONFIG set_config;          /* NFA_DM_SET_CONFIG_EVT    */
+  tNFA_GET_CONFIG get_config;          /* NFA_DM_GET_CONFIG_EVT    */
+  tNFA_DM_PWR_MODE_CHANGE power_mode;  /* NFA_DM_PWR_MODE_CHANGE_EVT   */
+  tNFA_DM_RF_FIELD rf_field;           /* NFA_DM_RF_FIELD_EVT      */
+  void* p_vs_evt_data;                 /* Vendor-specific evt data */
   tNFA_DM_POWER_STATE power_sub_state; /* power sub state */
 } tNFA_DM_CBACK_DATA;
 
@@ -331,6 +353,10 @@ typedef enum {
 #define NFA_P2P_PAUSED_EVT 38
 /* P2P services resumed event */
 #define NFA_P2P_RESUMED_EVT 39
+/* T3T Polling command completed */
+#define NFA_T3T_POLL_CMD_CPLT_EVT 40
+#define NFA_ACTIVATED_UPDATE_EVT \
+  41 /* Activated intf for updating the   tech variables */
 
 /* NFC deactivation type */
 #define NFA_DEACTIVATE_TYPE_IDLE NFC_DEACTIVATE_TYPE_IDLE
@@ -370,11 +396,17 @@ typedef struct {
   uint8_t IC_reference; /* IC Reference if I93_INFO_FLAG_IC_REF         */
 } tNFA_I93_PARAMS;
 
+typedef struct {
+  uint8_t mbi;
+  uint8_t uid[8]; /* UID of Chinese Id Card           */
+} tNFA_CI_PARAMS;
+
 typedef union {
   tNFA_T1T_PARAMS t1t; /* HR and UID of T1T                */
   tNFA_T2T_PARAMS t2t; /* UID of T2T                       */
   tNFA_T3T_PARAMS t3t; /* System codes                     */
   tNFA_I93_PARAMS i93; /* System Information of ISO 15693  */
+  tNFA_CI_PARAMS ci;
 } tNFA_TAG_PARAMS;
 
 typedef struct {
@@ -603,6 +635,7 @@ typedef struct {
   uint8_t lb_app_data[NCI_PARAM_LEN_LB_APPDATA]; /* Bytes 6 - 9 in SENSB_RES */
   uint8_t lb_sfgi;   /* Start-Up Frame Guard Time                */
   uint8_t lb_adc_fo; /* Byte 12 in SENSB_RES                     */
+  uint8_t lb_bit_rate; /* Maximum bit rate for NFC-B               */
 
   /*
   ** Discovery Configuration Parameters for Listen F
@@ -620,8 +653,10 @@ typedef struct {
   /*
   ** Discovery Configuration Parameters for Listen ISO-DEP
   */
-  bool li_enable;            /* TRUE if listening ISO-DEP            */
-  uint8_t li_fwi;            /* Frame Waiting Time Integer           */
+  bool li_enable; /* TRUE if listening ISO-DEP            */
+  uint8_t li_fwi; /* Frame Waiting Time Integer           */
+  uint8_t li_a_rats_tb1; /* RATS response interface Byte TB1     */
+  uint8_t li_a_rats_tc1; /* RATS response interface Byte TC1     */
   uint8_t la_hist_bytes_len; /* historical bytes for Listen-A        */
   uint8_t la_hist_bytes[NFA_LA_MAX_HIST_BYTES];
   uint8_t lb_h_info_resp_len; /* higher layer response for Listen-B   */
@@ -630,7 +665,8 @@ typedef struct {
   /*
   ** Discovery Configuration Parameters for Listen NFC-DEP
   */
-  bool ln_enable;                   /* TRUE if listening NFC-DEP            */
+  bool ln_enable; /* TRUE if listening NFC-DEP            */
+  bool lacm_enable; /* TRUE if listening NFC-DEP on ACM     */
   uint8_t ln_wt;                    /* Waiting Time Integer                 */
   uint8_t ln_atr_res_gen_bytes_len; /* General bytes in ATR_RES             */
   uint8_t ln_atr_res_gen_bytes[NCI_MAX_GEN_BYTES_LEN];
@@ -718,6 +754,7 @@ typedef void(tNFA_NDEF_CBACK)(tNFA_NDEF_EVT event, tNFA_NDEF_EVT_DATA* p_data);
 /* NFA VSC Callback */
 typedef void(tNFA_VSC_CBACK)(uint8_t event, uint16_t param_len,
                              uint8_t* p_param);
+typedef void(tNFA_RESTART_CBACK)();
 
 /*****************************************************************************
 **  External Function Declarations
@@ -1290,6 +1327,7 @@ extern tNFA_STATUS NFA_PowerOffSleepMode(bool start_stop);
 **
 *******************************************************************************/
 extern tNFC_STATUS NFA_RegVSCback(bool is_register, tNFA_VSC_CBACK* p_cback);
+extern void NFA_RegRestartCback(tNFA_RESTART_CBACK* p_cback);
 
 /*******************************************************************************
 **
@@ -1342,6 +1380,28 @@ extern tNFA_STATUS NFA_SendRawVsCommand(uint8_t cmd_params_len,
 **
 *******************************************************************************/
 extern void NFA_EnableDtamode(tNFA_eDtaModes eDtaMode);
+
+/*******************************************************************************
+**
+** Function         NFA_DtaRegister
+**
+** Description      This function sets the DTA specific mode.
+**
+** Returns          None
+**
+*******************************************************************************/
+extern void NFA_DtaRegister(void);
+
+/*******************************************************************************
+**
+** Function         NFA_DtaDeregister
+**
+** Description      This function resets the DTA specific mode.
+**
+** Returns          None
+**
+*******************************************************************************/
+extern void NFA_DtaDeregister(void);
 
 /*******************************************************************************
 ** Function         NFA_GetNCIVersion
